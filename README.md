@@ -292,6 +292,11 @@ cargo build --release --example method_counter
 cargo build --release --example class_logger
 ```
 
+## Documentation
+
+- [**Your First Production Agent**](docs/FIRST_AGENT.md) — Step-by-step guide with production hardening
+- [**API Reference**](https://docs.rs/jvmti-bindings) — Complete API documentation on docs.rs
+
 ## License
 
 MIT OR Apache-2.0
