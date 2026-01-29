@@ -1,33 +1,43 @@
 # jvmti-bindings
 
-Safe, complete JNI and JVMTI bindings for Rust with **zero dependencies**.
+Write JVM agents in Rust with explicit safety boundaries and production-grade ergonomics.
 
-Build production-grade JVM agents, profilers, and runtime tools in Rust with explicit safety boundaries and idiomatic ergonomics.
+Complete JNI and JVMTI bindings plus higher-level abstractions designed for building profilers, tracers, debuggers, and runtime instrumentation — without writing C or C++.
 
-## Why Rust for JVMTI?
+This crate focuses on:
+- Making ownership, lifetimes, and error handling explicit
+- Reducing common JVMTI footguns
+- Keeping unsafe behavior localized and auditable
 
-JVMTI is powerful but dangerous. One wrong move and you get:
-- Segfaults from dangling references
-- Memory leaks from forgotten deallocations
-- Silent corruption from unchecked error codes
-- Deadlocks from callbacks that break JVM invariants
+It is intended for serious native JVM tooling, not just experimentation.
 
-This crate provides:
-- **Explicit ownership** - References have clear lifetimes, RAII guards prevent leaks
-- **Centralized unsafety** - All raw JVM interaction is auditable in one place
-- **Forced error handling** - Every JVMTI call returns `Result`, no silent failures
-- **Type-safe callbacks** - The `Agent` trait gives you correctly-typed event handlers
+## Why This Exists
 
-This is not a thin wrapper. It's a safety-oriented mental model for JVMTI in Rust.
+JVMTI is powerful — and notoriously easy to misuse.
+
+Typical problems when writing agents:
+- Unchecked error codes that silently corrupt state
+- Invalid reference lifetimes causing segfaults
+- Allocator mismatches leaking memory
+- Thread-local `JNIEnv` misuse across callbacks
+- Undocumented callback constraints causing deadlocks
+
+Most existing Rust options either:
+- Expose raw bindings with little guidance
+- Rely on build-time bindgen
+- Are incomplete or unmaintained (7+ years)
+- Optimize for JNI, not JVMTI agents
+
+This crate was designed around how agents are actually written, not around mirroring C headers.
 
 ## Design Goals
 
 | Goal | How |
 |------|-----|
-| **Explicit safety model** | Unsafe operations centralized; API surfaces return `Result` |
-| **No hidden dependencies** | No bindgen, no build-time JVM, no global allocators |
-| **Complete JVMTI surface** | All 236 JNI + 156 JVMTI functions, mapped to Rust types |
+| **Explicit safety model** | Unsafe operations centralized; APIs return `Result` |
+| **Complete surface** | All 236 JNI + 156 JVMTI functions, mapped to Rust types |
 | **Agent-first ergonomics** | Structured callbacks, capability management, RAII resources |
+| **No hidden dependencies** | No bindgen, no build-time JVM, no global allocators |
 | **Long-term compatibility** | Verified against OpenJDK headers, JDK 8 through 27 |
 
 ## Quick Start
@@ -91,59 +101,61 @@ java -agentpath:./target/release/libmy_agent.dylib=myoptions MyApp
 java -agentpath:./target/release/my_agent.dll=myoptions MyApp
 ```
 
-## What `export_agent!` Does (and Doesn't Do)
+## What `export_agent!` Does
 
-The macro generates the native entry points the JVM expects. Understanding what it does removes the magic:
+The macro generates the native entry points the JVM expects.
 
 **It does:**
-- Generate `Agent_OnLoad` and `Agent_OnUnload` FFI entry points
-- Initialize the JVMTI environment from the JavaVM pointer
-- Parse the options string and pass it to your `on_load()`
-- Store your agent instance globally (it must be `Sync + Send`)
-- Wire up all JVMTI event callbacks to your `Agent` trait methods
+- Generate `Agent_OnLoad` / `Agent_OnUnload` FFI entry points
+- Initialize JNI and JVMTI environments
+- Register callbacks before enabling events
+- Convert JVMTI error codes into `Result<T, JvmtiError>`
+- Store your agent instance globally (must be `Sync + Send`)
 
 **It does not:**
-- Suppress JVM crashes from undefined JVMTI behavior
-- Make callbacks re-entrant-safe (that's your responsibility)
-- Automatically attach arbitrary native threads
-- Catch panics across FFI boundaries (don't panic in callbacks)
+- Hide undefined JVMTI behavior
+- Make callbacks re-entrant or async-safe
+- Attach arbitrary native threads automatically
+- Prevent JVM crashes from invalid JVMTI usage
+
+The goal is clarity, not magic.
 
 ## Safety Model
 
-This crate enforces these invariants:
+This crate enforces the following invariants:
 
 | Invariant | Enforcement |
 |-----------|-------------|
 | `JNIEnv` is thread-local | `JniEnv` wrapper is not `Send` |
-| Local refs don't outlive their frame | `LocalRef<'a>` tied to `JniEnv` lifetime |
-| Global refs are explicitly freed | `GlobalRef` releases on `Drop` |
-| JVMTI memory uses JVMTI allocator | Wrapper methods handle alloc/dealloc |
+| Local refs don't escape | `LocalRef<'a>` tied to `JniEnv` lifetime |
+| Global refs are freed | `GlobalRef` releases on `Drop` |
+| JVMTI memory properly freed | Wrapper methods handle alloc/dealloc |
 | Errors are never ignored | All methods return `Result<T, jvmtiError>` |
 
 ### What Remains Unsafe
 
 Some things cannot be made safe by design:
 
-- **Bytecode transformation correctness** - If you emit invalid bytecode, the JVM will crash
-- **Callback timing assumptions** - JVMTI events fire at specific JVM phases; misuse causes UB
-- **Blocking in callbacks** - Long operations in GC callbacks can deadlock the JVM
-- **Cross-thread reference sharing** - JNI local refs are thread-local; sharing them is UB
+- **Bytecode transformation correctness** — invalid bytecode crashes the JVM
+- **Callback timing assumptions** — JVMTI events fire at specific phases
+- **Blocking in callbacks** — long operations in GC callbacks deadlock
+- **Cross-thread reference sharing** — JNI local refs are thread-local
 
-We document these constraints; we cannot prevent them at compile time.
+Rust helps — but JVMTI is still a sharp tool.
 
-## Is This Crate For You?
+## Is This For You?
 
 **Yes, if you are:**
-- Building profilers, tracers, debuggers, or instrumentation tools
+- Building profilers, tracers, debuggers, or instrumentation
 - Want Rust's type system around JVMTI's sharp edges
-- Need a single crate that works across JDK 8-27
-- Comfortable reading JVMTI documentation for advanced use cases
+- Need a single crate that works across JDK 8–27
+- Comfortable reading JVMTI docs for advanced use cases
 
 **Probably not, if you:**
-- Only need basic JNI calls (consider `jni` crate instead)
+- Only need basic JNI calls (consider the `jni` crate)
 - Are uncomfortable debugging native JVM crashes
-- Need dynamic JVM attachment (attach API not yet wrapped)
-- Want a pure-safe API with no `unsafe` anywhere
+- Need dynamic attach API (not yet wrapped)
+- Want zero `unsafe` anywhere
 
 ## Architecture
 
@@ -167,9 +179,9 @@ We document these constraints; we cannot prevent them at compile time.
 └─────────────────────────────────────────────────────────┘
 ```
 
-## Enabling JVMTI Events
+## Enabling Events
 
-Events require three steps - capabilities, callbacks, then enable:
+Events require three steps — capabilities, callbacks, then enable:
 
 ```rust
 use jvmti_bindings::env::Jvmti;
@@ -179,27 +191,27 @@ use jvmti_bindings::get_default_callbacks;
 fn on_load(&self, vm: *mut jni::JavaVM, _options: &str) -> jni::jint {
     let jvmti_env = Jvmti::new(vm).expect("Failed to get JVMTI");
 
-    // 1. Request capabilities (must be done in on_load)
+    // 1. Request capabilities (must happen in on_load)
     let mut caps = jvmti::jvmtiCapabilities::default();
     caps.set_can_generate_all_class_hook_events(true);
-    jvmti_env.add_capabilities(&caps).expect("add capabilities");
+    jvmti_env.add_capabilities(&caps).expect("capabilities");
 
-    // 2. Wire up callbacks (connects events to your Agent impl)
+    // 2. Wire callbacks to your Agent impl
     let callbacks = get_default_callbacks();
-    jvmti_env.set_event_callbacks(callbacks).expect("set callbacks");
+    jvmti_env.set_event_callbacks(callbacks).expect("callbacks");
 
     // 3. Enable specific events
     jvmti_env.set_event_notification_mode(
         true,
         jvmti::JVMTI_EVENT_CLASS_FILE_LOAD_HOOK,
         std::ptr::null_mut(),
-    ).expect("enable event");
+    ).expect("enable");
 
     jni::JNI_OK
 }
 ```
 
-## Capabilities Quick Reference
+## Capabilities Reference
 
 | Capability | Required For |
 |------------|--------------|
@@ -220,39 +232,34 @@ fn on_load(&self, vm: *mut jni::JavaVM, _options: &str) -> jni::jint {
 |-----|--------|-------------------|
 | 8   | ✅ Tested | Baseline |
 | 11  | ✅ Tested | `SetHeapSamplingInterval` |
-| 17  | ✅ Tested | - |
-| 21  | ✅ Tested | `IsVirtualThread`, virtual thread events |
+| 17  | ✅ Tested | — |
+| 21  | ✅ Tested | Virtual thread support |
 | 27  | ✅ Verified | `ClearAllFramePops` |
 
-Bindings are generated from JDK 27 headers with backwards compatibility to JDK 8.
+Bindings generated from JDK 27 headers, backwards compatible to JDK 8.
 
 ## Project Status
 
 | Aspect | Status |
 |--------|--------|
 | API stability | Pre-1.0, breaking changes possible |
-| JDK coverage | 8, 11, 17, 21, 27 |
-| JVMTI functions | 156/156 (100%) |
-| JNI functions | 236/236 (100%) |
+| JVMTI coverage | 156/156 (100%) |
+| JNI coverage | 236/236 (100%) |
 | Dependencies | Zero |
 | Testing | Header verification, example agents |
 
 ## Examples
 
 ```bash
-# Minimal agent - lifecycle events only
+# Minimal agent — lifecycle events only
 cargo build --release --example minimal
 
-# Method counter - counts all method entries/exits
+# Method counter — counts all method entries/exits
 cargo build --release --example method_counter
 
-# Class logger - logs every class load
+# Class logger — logs every class load
 cargo build --release --example class_logger
 ```
-
-## Contributing
-
-Issues and PRs welcome. For large changes, open an issue first to discuss.
 
 ## License
 
