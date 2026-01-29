@@ -101,7 +101,7 @@
 
 // Re-export the JVMTI wrapper
 mod jvmti_impl {
-    pub use crate::wrapper::Jvmti;
+    pub use crate::jvmti_wrapper::Jvmti;
 }
 
 // Re-export the JNI wrapper

@@ -194,7 +194,7 @@ pub mod env;
 
 // Implementation modules (use `env` module for the public API)
 #[doc(hidden)]
-pub mod wrapper;
+pub mod jvmti_wrapper;
 #[doc(hidden)]
 pub mod jni_wrapper;
 

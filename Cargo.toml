@@ -3,8 +3,8 @@
 # Zero dependencies. Verified against JDK 27. Compatible with JDK 8+.
 
 [package]
-name = "jvmti-rs"
-version = "0.1.0"
+name = "jvmti-bindings"
+version = "0.1.1"
 edition = "2021"
 rust-version = "1.70"
 
