@@ -30,6 +30,37 @@ Most existing Rust options either:
 
 This crate was designed around how agents are actually written, not around mirroring C headers.
 
+## Comparison with Alternatives
+
+| Feature | jvmti-bindings | jni | jvmti-rs | jni-simple |
+|---------|----------------|-----|----------|------------|
+| **JVMTI support** | ✅ 156/156 (100%) | ❌ None | ⚠️ Partial | ⚠️ Untested |
+| **JNI support** | ✅ 236/236 (100%) | ✅ Complete | ⚠️ Partial | ✅ Complete |
+| **Agent trait** | ✅ Yes | ❌ No | ❌ No | ❌ No |
+| **RAII guards** | ✅ LocalRef, GlobalRef | ✅ Yes | ❌ No | ❌ No |
+| **Dependencies** | 0 | 3+ | 1+ | 1 |
+| **Build-time JDK** | ❌ Not needed | ❌ Not needed | ✅ Required | ❌ Not needed |
+| **Last updated** | 2025 | 2024 | 2024 | 2024 |
+| **JDK range** | 8–27 | 8–21 | Unknown | 8–21 |
+
+**When to use what:**
+- **jvmti-bindings**: Building JVMTI agents (profilers, tracers, debuggers)
+- **jni**: Calling Java from Rust applications (not agents)
+- **jvmti-rs**: Legacy projects already using it
+- **jni-simple**: Minimal JNI with no frills
+
+## Why Rust for JVMTI?
+
+C++ is the traditional choice, but Rust offers compelling advantages:
+
+- **Memory safety without GC** — JVMTI agents run inside the JVM process; a segfault kills the application
+- **Fearless concurrency** — JVMTI callbacks fire from multiple threads simultaneously
+- **Zero-cost abstractions** — RAII guards and Result types add safety without runtime overhead
+- **No runtime dependencies** — Deploy a single `.so`/`.dylib`/`.dll` with no external libraries
+- **Modern tooling** — Cargo, docs.rs, and crates.io beat Makefiles and manual distribution
+
+Java agents (`java.lang.instrument`) are simpler but can't access low-level features like heap iteration, breakpoints, or raw bytecode hooks.
+
 ## Design Goals
 
 | Goal | How |
