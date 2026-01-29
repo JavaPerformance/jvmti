@@ -1,0 +1,49 @@
+# jvmti - Complete JNI/JVMTI bindings for Rust
+#
+# Zero dependencies. Verified against JDK 27. Compatible with JDK 8+.
+
+[package]
+name = "jvmti"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+
+description = "Complete JNI and JVMTI bindings for Rust with zero dependencies. Build JVM agents in pure Rust."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/JavaPerformance/jvmti"
+documentation = "https://docs.rs/jvmti"
+readme = "README.md"
+keywords = ["jvm", "jni", "jvmti", "java", "agent"]
+categories = ["api-bindings", "development-tools::profiling", "external-ffi-bindings"]
+
+[dependencies]
+# No external dependencies - all JNI/JVMTI bindings are internal
+
+[lib]
+crate-type = ["rlib"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+# Examples are provided as templates, not runnable binaries.
+# JVMTI agents must be built as cdylib in your own crate.
+# See examples/*.rs for copy-paste templates.
+#
+# To use, create your own crate with:
+#   [lib]
+#   crate-type = ["cdylib"]
+#
+#   [dependencies]
+#   jvmti = "0.1"
+
+[[example]]
+name = "minimal"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "method_counter"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "class_logger"
+crate-type = ["cdylib"]
