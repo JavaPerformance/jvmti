@@ -408,6 +408,7 @@ cargo build --release --example class_logger
 - [**API Report Script**](scripts/public_api_report.sh) — Regenerate the report with rustdoc JSON
 - [**Changelog**](CHANGELOG.md) — Release notes and breaking changes
 - [**Comparison With Alternatives**](docs/COMPARISON.md) — Feature parity and positioning
+- [**Benchmarks**](docs/BENCHMARKS.md) — How to run and view Criterion reports
 - [**Safety and FFI Checklist**](docs/SAFETY.md) — Safety rules and audit checklist
 - [**Pitfalls and Footguns**](docs/PITFALLS.md) — Common JVMTI/JNI traps
 - [**Compatibility Matrix**](docs/COMPATIBILITY.md) — JDK 8-27 coverage
