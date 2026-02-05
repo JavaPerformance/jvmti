@@ -4,7 +4,7 @@
 
 [package]
 name = "jvmti-bindings"
-version = "0.1.5"
+version = "2.0.0"
 edition = "2021"
 rust-version = "1.70"
 
@@ -18,6 +18,14 @@ categories = ["api-bindings", "development-tools::profiling", "external-ffi-bind
 
 [dependencies]
 # No external dependencies - all JNI/JVMTI bindings are internal
+
+[features]
+default = []
+advanced = []
+heap-graph = ["advanced"]
+
+[dev-dependencies]
+criterion = "0.5"
 
 [lib]
 crate-type = ["rlib"]
@@ -47,3 +55,19 @@ crate-type = ["cdylib"]
 [[example]]
 name = "class_logger"
 crate-type = ["cdylib"]
+
+[[example]]
+name = "profiler"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "tracer"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "heap_sampler"
+crate-type = ["cdylib"]
+
+[[bench]]
+name = "classfile_parse"
+harness = false

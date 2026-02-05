@@ -24,12 +24,7 @@
 //! Method entry events have significant overhead. For production profiling,
 //! consider using sampling-based approaches or bytecode instrumentation.
 
-use ::jvmti::export_agent;
-use ::jvmti::sys::jni;
-use ::jvmti::sys::jvmti;
-use ::jvmti::env::Jvmti;
-use ::jvmti::Agent;
-use ::jvmti::get_default_callbacks;
+use jvmti_bindings::prelude::*;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Default)]

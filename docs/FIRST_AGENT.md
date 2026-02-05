@@ -39,7 +39,7 @@ In `Cargo.toml`:
 crate-type = ["cdylib"]
 
 [dependencies]
-jvmti-bindings = "0.1"
+jvmti-bindings = "2"
 ```
 
 **Why `cdylib`?**
@@ -78,9 +78,7 @@ pub struct ClassCounterAgent {
 The `Agent` trait is your contract with the JVM:
 
 ```rust
-use jvmti_bindings::{Agent, export_agent, get_default_callbacks};
-use jvmti_bindings::env::Jvmti;
-use jvmti_bindings::sys::{jni, jvmti};
+use jvmti_bindings::prelude::*;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Default)]

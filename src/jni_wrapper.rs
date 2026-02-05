@@ -5,7 +5,7 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use jvmti::jni_wrapper::JniEnv;
+//! use jvmti_bindings::prelude::*;
 //!
 //! fn vm_init(jni: *mut jni::JNIEnv, thread: jni::jthread) {
 //!     let env = unsafe { JniEnv::from_raw(jni) };
@@ -23,10 +23,29 @@
 //!     }
 //! }
 //! ```
+//!
+//! # Thread-Local Safety
+//!
+//! `JniEnv` and `GlobalRef` are intentionally `!Send` and `!Sync`.
+//! The following examples must fail to compile:
+//!
+//! ```compile_fail
+//! use jvmti_bindings::prelude::*;
+//! fn assert_send<T: Send>() {}
+//! fn test(env: JniEnv) { assert_send(env); }
+//! ```
+//!
+//! ```compile_fail
+//! use jvmti_bindings::prelude::*;
+//! fn assert_send<T: Send>() {}
+//! fn test(r: GlobalRef) { assert_send(r); }
+//! ```
 
 use crate::sys::jni;
 use std::ffi::{CStr, CString};
+use std::marker::PhantomData;
 use std::ptr;
+use std::rc::Rc;
 
 /// Safe wrapper around a JNI environment pointer.
 ///
@@ -39,6 +58,7 @@ use std::ptr;
 /// Each JVM thread has its own JNI environment.
 pub struct JniEnv {
     env: *mut jni::JNIEnv,
+    _not_send_sync: PhantomData<Rc<()>>,
 }
 
 impl JniEnv {
@@ -48,12 +68,22 @@ impl JniEnv {
     ///
     /// The caller must ensure the pointer is valid and comes from the current thread.
     pub unsafe fn from_raw(env: *mut jni::JNIEnv) -> Self {
-        JniEnv { env }
+        JniEnv { env, _not_send_sync: PhantomData }
     }
 
     /// Returns the raw JNI environment pointer.
     pub fn raw(&self) -> *mut jni::JNIEnv {
         self.env
+    }
+
+    /// Returns the JavaVM for this environment.
+    pub fn get_java_vm(&self) -> Result<*mut jni::JavaVM, jni::jint> {
+        let mut vm: *mut jni::JavaVM = ptr::null_mut();
+        unsafe {
+            let vtable = *self.env;
+            let result = ((*vtable).GetJavaVM)(self.env, &mut vm);
+            if result == 0 { Ok(vm) } else { Err(result) }
+        }
     }
 
     // =========================================================================
@@ -187,9 +217,20 @@ impl JniEnv {
         }
     }
 
+    /// Creates a new Java string from a Rust string using UTF-16.
+    pub fn new_string(&self, s: &str) -> Option<jni::jstring> {
+        let utf16: Vec<jni::jchar> = s.encode_utf16().collect();
+        unsafe {
+            let vtable = *self.env;
+            let jstr = ((*vtable).NewString)(self.env, utf16.as_ptr(), utf16.len() as jni::jsize);
+            if jstr.is_null() { None } else { Some(jstr) }
+        }
+    }
+
     /// Gets a Rust string from a Java string.
     ///
-    /// Returns `None` if the string is null or contains invalid UTF-8.
+    /// Returns `None` if the string is null or contains invalid modified UTF-8.
+    /// For full-fidelity Unicode (including embedded nulls), use [`get_string`].
     pub fn get_string_utf(&self, s: jni::jstring) -> Option<String> {
         if s.is_null() {
             return None;
@@ -203,6 +244,27 @@ impl JniEnv {
             let result = CStr::from_ptr(chars).to_str().ok().map(|s| s.to_string());
             ((*vtable).ReleaseStringUTFChars)(self.env, s, chars);
             result
+        }
+    }
+
+    /// Gets a Rust string from a Java string using UTF-16.
+    ///
+    /// Returns `None` if the string is null.
+    pub fn get_string(&self, s: jni::jstring) -> Option<String> {
+        if s.is_null() {
+            return None;
+        }
+        unsafe {
+            let vtable = *self.env;
+            let chars = ((*vtable).GetStringChars)(self.env, s, ptr::null_mut());
+            if chars.is_null() {
+                return None;
+            }
+            let len = ((*vtable).GetStringLength)(self.env, s) as usize;
+            let slice = std::slice::from_raw_parts(chars, len);
+            let result = String::from_utf16_lossy(slice);
+            ((*vtable).ReleaseStringChars)(self.env, s, chars);
+            Some(result)
         }
     }
 
@@ -739,8 +801,9 @@ impl<'a> Drop for LocalRef<'a> {
 /// // it's automatically deleted when dropped
 /// ```
 pub struct GlobalRef {
-    env_for_cleanup: *mut jni::JNIEnv,
+    vm: *mut jni::JavaVM,
     obj: jni::jobject,
+    _not_send_sync: PhantomData<Rc<()>>,
 }
 
 impl GlobalRef {
@@ -752,9 +815,11 @@ impl GlobalRef {
     /// or that cleanup is handled manually.
     pub unsafe fn new(env: &JniEnv, local_obj: jni::jobject) -> Self {
         let global = env.new_global_ref(local_obj);
+        let vm = env.get_java_vm().unwrap_or(ptr::null_mut());
         GlobalRef {
-            env_for_cleanup: env.raw(),
+            vm,
             obj: global,
+            _not_send_sync: PhantomData,
         }
     }
 
@@ -766,10 +831,32 @@ impl GlobalRef {
 
 impl Drop for GlobalRef {
     fn drop(&mut self) {
-        if !self.obj.is_null() && !self.env_for_cleanup.is_null() {
-            unsafe {
-                let env = JniEnv::from_raw(self.env_for_cleanup);
+        if self.obj.is_null() || self.vm.is_null() {
+            return;
+        }
+
+        unsafe {
+            let get_env_fn = (**self.vm).GetEnv;
+            let attach_fn = (**self.vm).AttachCurrentThread;
+            let detach_fn = (**self.vm).DetachCurrentThread;
+
+            let mut env_ptr: *mut std::ffi::c_void = ptr::null_mut();
+            let res = get_env_fn(self.vm, &mut env_ptr, jni::JNI_VERSION_1_6);
+
+            if res == jni::JNI_OK && !env_ptr.is_null() {
+                let env = JniEnv::from_raw(env_ptr as *mut jni::JNIEnv);
                 env.delete_global_ref(self.obj);
+                return;
+            }
+
+            if res == jni::JNI_EDETACHED {
+                let mut attach_env: *mut std::ffi::c_void = ptr::null_mut();
+                let ares = attach_fn(self.vm, &mut attach_env, ptr::null_mut());
+                if ares == jni::JNI_OK && !attach_env.is_null() {
+                    let env = JniEnv::from_raw(attach_env as *mut jni::JNIEnv);
+                    env.delete_global_ref(self.obj);
+                    let _ = detach_fn(self.vm);
+                }
             }
         }
     }

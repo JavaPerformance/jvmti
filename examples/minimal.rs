@@ -14,7 +14,7 @@
 //! java -agentpath:./target/release/examples/libminimal.so=hello MyApp
 //! ```
 
-use jvmti::{export_agent, sys::jni, Agent};
+use jvmti_bindings::prelude::*;
 
 #[derive(Default)]
 struct MinimalAgent;

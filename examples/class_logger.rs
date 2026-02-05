@@ -18,12 +18,7 @@
 //! java -agentpath:./target/release/examples/libclass_logger.so MyApp
 //! ```
 
-use ::jvmti::export_agent;
-use ::jvmti::sys::jni;
-use ::jvmti::sys::jvmti;
-use ::jvmti::env::Jvmti;
-use ::jvmti::Agent;
-use ::jvmti::get_default_callbacks;
+use jvmti_bindings::prelude::*;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Default)]

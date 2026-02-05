@@ -7,9 +7,7 @@
 //! # Quick Start
 //!
 //! ```rust,ignore
-//! use jvmti::{Agent, export_agent};
-//! use jvmti::env::{Jvmti, JniEnv};
-//! use jvmti::sys::{jni, jvmti};
+//! use jvmti_bindings::prelude::*;
 //!
 //! #[derive(Default)]
 //! struct MyAgent;
@@ -25,7 +23,7 @@
 //!         jvmti.add_capabilities(&caps).expect("Failed to add capabilities");
 //!
 //!         // Set up event callbacks
-//!         let callbacks = jvmti::get_default_callbacks();
+//!         let callbacks = get_default_callbacks();
 //!         jvmti.set_event_callbacks(callbacks).expect("Failed to set callbacks");
 //!
 //!         jni::JNI_OK
@@ -86,7 +84,7 @@
 //! - [`GlobalRef`]: Automatically deletes a global reference when dropped
 //!
 //! ```rust,ignore
-//! use jvmti::env::{JniEnv, LocalRef};
+//! use jvmti_bindings::prelude::*;
 //!
 //! fn do_something(jni: &JniEnv) {
 //!     // LocalRef automatically cleans up when it goes out of scope
@@ -101,7 +99,10 @@
 
 // Re-export the JVMTI wrapper
 mod jvmti_impl {
-    pub use crate::jvmti_wrapper::Jvmti;
+    pub use crate::jvmti_wrapper::{
+        ExtensionEventInfo, ExtensionFunctionInfo, ExtensionParamInfo, Jvmti, LocalVariableEntry,
+        MonitorUsage, StackInfo, ThreadGroupInfo, ThreadInfo,
+    };
 }
 
 // Re-export the JNI wrapper
@@ -109,5 +110,8 @@ mod jni_impl {
     pub use crate::jni_wrapper::{JniEnv, LocalRef, GlobalRef};
 }
 
-pub use jvmti_impl::Jvmti;
+pub use jvmti_impl::{
+    ExtensionEventInfo, ExtensionFunctionInfo, ExtensionParamInfo, Jvmti, LocalVariableEntry,
+    MonitorUsage, StackInfo, ThreadGroupInfo, ThreadInfo,
+};
 pub use jni_impl::{JniEnv, LocalRef, GlobalRef};

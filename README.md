@@ -71,6 +71,53 @@ Java agents (`java.lang.instrument`) are simpler but can't access low-level feat
 | **No hidden dependencies** | No bindgen, no build-time JVM, no global allocators |
 | **Long-term compatibility** | Verified against OpenJDK headers, JDK 8 through 27 |
 
+## Safety and FFI
+
+This crate is built around explicit safety boundaries. See `docs/SAFETY.md` and `docs/PITFALLS.md` for the full checklist.
+
+Key rules:
+1. Never use `JNIEnv` across threads.
+2. Never panic across JNI/JVMTI callbacks.
+3. Always deallocate JVMTI buffers with `Deallocate`.
+4. Avoid JNI calls in GC callbacks.
+
+## Public API
+
+The supported public surface is intentionally small. For most users:
+1. Use `env` for safe wrappers.
+2. Use `prelude` for standard imports.
+3. Use `sys` only for raw FFI work.
+
+Details: `docs/PUBLIC_API.md`.
+
+## Raw FFI Access
+
+If you need raw JNI/JVMTI functions, use:
+1. `jvmti_bindings::sys::jni` and `jvmti_bindings::sys::jvmti` for raw types and vtables.
+2. `JniEnv::raw()` and `Jvmti::raw()` to access the underlying raw pointers.
+
+## Attach and Threading Rules
+
+1. `Agent_OnAttach` is supported via the `export_agent!` macro and `Agent::on_attach`.
+2. `JNIEnv` is thread-local and must only be used on its originating thread.
+3. `GlobalRef` cleanup attaches to the JVM when needed, but you should still manage lifetimes explicitly.
+
+## Compatibility
+
+See `docs/COMPATIBILITY.md` for a full JDK 8-27 matrix.
+
+## Advanced Helpers
+
+Feature-gated helpers live under `advanced`:
+1. `heap-graph` for heap tagging and reference edge extraction.
+
+Enable with:
+
+```toml
+[dependencies]
+jvmti-bindings = { version = "2", features = ["heap-graph"] }
+```
+
 ## Quick Start
 
 ### 1. Create your crate
@@ -87,14 +134,13 @@ cd my_agent
 crate-type = ["cdylib"]
 
 [dependencies]
-jvmti-bindings = "0.1"
+jvmti-bindings = "2"
 ```
 
 ### 3. Implement your agent
 
 ```rust
-use jvmti_bindings::{Agent, export_agent};
-use jvmti_bindings::sys::jni;
+use jvmti_bindings::prelude::*;
 
 #[derive(Default)]
 struct MyAgent;
@@ -131,6 +177,37 @@ java -agentpath:./target/release/libmy_agent.dylib=myoptions MyApp
 # Windows
 java -agentpath:./target/release/my_agent.dll=myoptions MyApp
 ```
+
+## Class File Parsing
+
+This crate now includes a zero-dependency class file parser that understands all standard attributes from Java 8 through Java 27. Use it inside `ClassFileLoadHook` to inspect or transform class metadata.
+
+```rust
+use jvmti_bindings::classfile::ClassFile;
+
+fn parse_class(bytes: &[u8]) {
+    let classfile = ClassFile::parse(bytes).expect("valid class file");
+    println!("major version = {}", classfile.major_version);
+    println!("attributes = {}", classfile.attributes.len());
+}
+```
+
+## Examples
+
+Included examples (build as `cdylib` agents):
+1. `examples/minimal.rs`
+2. `examples/class_logger.rs`
+3. `examples/profiler.rs`
+4. `examples/tracer.rs`
+5. `examples/heap_sampler.rs`
+
+## Agent Starter Template
+
+See `templates/agent-starter/` for a ready-to-copy agent crate.
+
+## CI
+
+The repository includes a GitHub Actions workflow that builds and tests on Linux, macOS, and Windows.
 
 ## What `export_agent!` Does
 
@@ -215,9 +292,7 @@ Rust helps — but JVMTI is still a sharp tool.
 Events require three steps — capabilities, callbacks, then enable:
 
 ```rust
-use jvmti_bindings::env::Jvmti;
-use jvmti_bindings::sys::jvmti;
-use jvmti_bindings::get_default_callbacks;
+use jvmti_bindings::prelude::*;
 
 fn on_load(&self, vm: *mut jni::JavaVM, _options: &str) -> jni::jint {
     let jvmti_env = Jvmti::new(vm).expect("Failed to get JVMTI");
@@ -295,6 +370,16 @@ cargo build --release --example class_logger
 ## Documentation
 
 - [**Your First Production Agent**](docs/FIRST_AGENT.md) — Step-by-step guide with production hardening
+- [**Public API Surface**](docs/PUBLIC_API.md) — What is stable and supported
+- [**API Stability Checklist**](docs/API_STABILITY.md) — Pre-1.0 stability rules
+- [**Contributor Style Guide**](docs/STYLE_GUIDE.md) — Prelude-first and API consistency
+- [**Public API Report**](docs/PUBLIC_API_REPORT.md) — Snapshot of the public surface
+- [**API Report Script**](scripts/public_api_report.sh) — Regenerate the report with rustdoc JSON
+- [**Changelog**](CHANGELOG.md) — Release notes and breaking changes
+- [**Safety and FFI Checklist**](docs/SAFETY.md) — Safety rules and audit checklist
+- [**Pitfalls and Footguns**](docs/PITFALLS.md) — Common JVMTI/JNI traps
+- [**Compatibility Matrix**](docs/COMPATIBILITY.md) — JDK 8-27 coverage
+- [**Versioning Policy**](docs/VERSIONING.md) — API stability and SemVer plan
 - [**API Reference**](https://docs.rs/jvmti-bindings) — Complete API documentation on docs.rs
 
 ## License

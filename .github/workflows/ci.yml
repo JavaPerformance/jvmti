@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cargo check
+        run: cargo check
+      - name: Cargo test
+        run: cargo test
+      - name: Cargo doc tests
+        run: cargo test --doc
+      - name: Cargo test (all features)
+        run: cargo test --all-features
+      - name: Build examples
+        run: cargo build --examples

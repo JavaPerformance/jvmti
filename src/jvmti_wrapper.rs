@@ -1,7 +1,91 @@
 // vliss/jvmti/src/wrapper.rs
 use crate::sys::jvmti;
 use crate::sys::jni;
+use std::ffi::{CStr, CString};
 use std::ptr;
+
+#[derive(Debug, Clone)]
+pub struct ThreadInfo {
+    pub name: Option<String>,
+    pub priority: jni::jint,
+    pub is_daemon: bool,
+    pub thread_group: jni::jobject,
+    pub context_class_loader: jni::jobject,
+}
+
+#[derive(Debug, Clone)]
+pub struct ThreadGroupInfo {
+    pub parent: jni::jobject,
+    pub name: Option<String>,
+    pub max_priority: jni::jint,
+    pub is_daemon: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct MonitorUsage {
+    pub owner: jni::jthread,
+    pub entry_count: jni::jint,
+    pub waiters: Vec<jni::jthread>,
+    pub notify_waiters: Vec<jni::jthread>,
+}
+
+#[derive(Debug, Clone)]
+pub struct StackInfo {
+    pub thread: jni::jthread,
+    pub state: jni::jint,
+    pub frames: Vec<jvmti::jvmtiFrameInfo>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExtensionParamInfo {
+    pub name: Option<String>,
+    pub kind: jni::jint,
+    pub base_type: jni::jint,
+    pub null_ok: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExtensionFunctionInfo {
+    pub func: *mut std::ffi::c_void,
+    pub id: Option<String>,
+    pub short_description: Option<String>,
+    pub params: Vec<ExtensionParamInfo>,
+    pub errors: Vec<jvmti::jvmtiError>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExtensionEventInfo {
+    pub extension_event_index: jni::jint,
+    pub id: Option<String>,
+    pub short_description: Option<String>,
+    pub params: Vec<ExtensionParamInfo>,
+}
+
+#[derive(Debug, Clone)]
+pub struct LocalVariableEntry {
+    pub start_location: jvmti::jlocation,
+    pub length: jni::jint,
+    pub name: Option<String>,
+    pub signature: Option<String>,
+    pub generic_signature: Option<String>,
+    pub slot: jni::jint,
+}
+
+fn ptr_in_range(ptr: *const u8, base: *const u8, len: usize) -> bool {
+    if ptr.is_null() || base.is_null() || len == 0 {
+        return false;
+    }
+    let p = ptr as usize;
+    let b = base as usize;
+    p >= b && p < b + len
+}
+
+fn cstr_to_string(ptr: *const std::os::raw::c_char) -> Option<String> {
+    if ptr.is_null() {
+        return None;
+    }
+    unsafe { CStr::from_ptr(ptr).to_str().ok().map(|s| s.to_string()) }
+}
 
 /// A safe wrapper around the raw JVMTI Environment pointer.
 pub struct Jvmti {
@@ -78,6 +162,17 @@ impl Jvmti {
         }
         Ok(())
     }
+
+    /// Convenience helper to build and add capabilities in one step.
+    pub fn add_capabilities_with<F>(&self, f: F) -> Result<jvmti::jvmtiCapabilities, jvmti::jvmtiError>
+    where
+        F: FnOnce(&mut jvmti::jvmtiCapabilities),
+    {
+        let mut caps = jvmti::jvmtiCapabilities::default();
+        f(&mut caps);
+        self.add_capabilities(&caps)?;
+        Ok(caps)
+    }
     
     pub fn set_event_callbacks(&self, callbacks: jvmti::jvmtiEventCallbacks) -> Result<(), jvmti::jvmtiError> {
         unsafe {
@@ -104,6 +199,32 @@ impl Jvmti {
             if err != jvmti::jvmtiError::NONE {
                 return Err(err);
             }
+        }
+        Ok(())
+    }
+
+    /// Enable a single JVMTI event for a specific thread (or all threads with null).
+    pub fn enable_event(&self, event_type: u32, thread: jni::jthread) -> Result<(), jvmti::jvmtiError> {
+        self.set_event_notification_mode(true, event_type, thread)
+    }
+
+    /// Disable a single JVMTI event for a specific thread (or all threads with null).
+    pub fn disable_event(&self, event_type: u32, thread: jni::jthread) -> Result<(), jvmti::jvmtiError> {
+        self.set_event_notification_mode(false, event_type, thread)
+    }
+
+    /// Enable multiple JVMTI events for all threads.
+    pub fn enable_events_global(&self, events: &[u32]) -> Result<(), jvmti::jvmtiError> {
+        for &event_type in events {
+            self.enable_event(event_type, ptr::null_mut())?;
+        }
+        Ok(())
+    }
+
+    /// Disable multiple JVMTI events for all threads.
+    pub fn disable_events_global(&self, events: &[u32]) -> Result<(), jvmti::jvmtiError> {
+        for &event_type in events {
+            self.disable_event(event_type, ptr::null_mut())?;
         }
         Ok(())
     }
@@ -146,7 +267,7 @@ impl Jvmti {
         }
     }
 
-    pub fn get_thread_info(&self, thread: jni::jthread) -> Result<jvmti::jvmtiThreadInfo, jvmti::jvmtiError> {
+    pub fn get_thread_info(&self, thread: jni::jthread) -> Result<ThreadInfo, jvmti::jvmtiError> {
         let mut info = jvmti::jvmtiThreadInfo::default();
 
         unsafe {
@@ -158,7 +279,18 @@ impl Jvmti {
             }
         }
 
-        Ok(info)
+        let name = cstr_to_string(info.name);
+        if !info.name.is_null() {
+            self.deallocate(info.name as *mut u8)?;
+        }
+
+        Ok(ThreadInfo {
+            name,
+            priority: info.priority,
+            is_daemon: info.is_daemon != 0,
+            thread_group: info.thread_group,
+            context_class_loader: info.context_class_loader,
+        })
     }
 
     pub fn allocate(&self, size: jni::jlong) -> Result<*mut u8, jvmti::jvmtiError> {
@@ -416,14 +548,23 @@ impl Jvmti {
         }
     }
 
-    pub fn get_thread_group_info(&self, group: jni::jobject) -> Result<jvmti::jvmtiThreadGroupInfo, jvmti::jvmtiError> {
+    pub fn get_thread_group_info(&self, group: jni::jobject) -> Result<ThreadGroupInfo, jvmti::jvmtiError> {
         let mut info = jvmti::jvmtiThreadGroupInfo::default();
         unsafe {
             let get_info_fn = (*(*self.env).functions).GetThreadGroupInfo.unwrap();
             let err = get_info_fn(self.env, group, &mut info);
             if err != jvmti::jvmtiError::NONE { return Err(err); }
-            Ok(info)
         }
+        let name = cstr_to_string(info.name);
+        if !info.name.is_null() {
+            self.deallocate(info.name as *mut u8)?;
+        }
+        Ok(ThreadGroupInfo {
+            parent: info.parent,
+            name,
+            max_priority: info.max_priority,
+            is_daemon: info.is_daemon != 0,
+        })
     }
 
     pub fn get_thread_group_children(&self, group: jni::jobject) -> Result<(Vec<jni::jthread>, Vec<jni::jobject>), jvmti::jvmtiError> {
@@ -467,7 +608,7 @@ impl Jvmti {
     }
 
     pub fn create_raw_monitor(&self, name: &str) -> Result<jvmti::jrawMonitorID, jvmti::jvmtiError> {
-        let c_name = std::ffi::CString::new(name).unwrap();
+        let c_name = CString::new(name).map_err(|_| jvmti::jvmtiError::ILLEGAL_ARGUMENT)?;
         let mut monitor: jvmti::jrawMonitorID = ptr::null_mut();
         unsafe {
             let create_fn = (*(*self.env).functions).CreateRawMonitor.unwrap();
@@ -741,41 +882,79 @@ impl Jvmti {
         }
     }
 
-    pub fn get_all_stack_traces(&self, max_frame_count: jni::jint) -> Result<Vec<jvmti::jvmtiStackInfo>, jvmti::jvmtiError> {
+    pub fn get_all_stack_traces(&self, max_frame_count: jni::jint) -> Result<Vec<StackInfo>, jvmti::jvmtiError> {
         let mut stack_info_ptr: *mut jvmti::jvmtiStackInfo = ptr::null_mut();
         let mut thread_count: jni::jint = 0;
         unsafe {
             let get_all_fn = (*(*self.env).functions).GetAllStackTraces.unwrap();
             let err = get_all_fn(self.env, max_frame_count, &mut stack_info_ptr, &mut thread_count);
             if err != jvmti::jvmtiError::NONE { return Err(err); }
-            let stack_info = std::slice::from_raw_parts(stack_info_ptr, thread_count as usize).to_vec();
-            // Note: Each jvmtiStackInfo contains a frame_buffer pointer that should be deallocated too?
-            // JVMTI docs say: "The returned buffer should be deallocated with Deallocate."
-            // But jvmtiStackInfo contains pointers. Deallocating stack_info_ptr is definitely needed.
-            // Actually, the frame_buffer in jvmtiStackInfo points into the same block or separate blocks?
-            // "The block of memory returned by GetAllStackTraces... contains the jvmtiStackInfo structures."
-            // "The frame_buffer field of each jvmtiStackInfo structure points to an array of jvmtiFrameInfo structures."
-            // Usually JVMTI returns one big block for everything if possible, but let's be careful.
-            // Actually, for GetAllStackTraces, it says "Deallocate the stack_info_ptr".
-            self.deallocate(stack_info_ptr as *mut u8)?;
-            Ok(stack_info)
         }
+        let info_slice = unsafe { std::slice::from_raw_parts(stack_info_ptr, thread_count as usize) };
+        let base = stack_info_ptr as *const u8;
+        let len = (thread_count as usize) * std::mem::size_of::<jvmti::jvmtiStackInfo>();
+
+        let mut out = Vec::with_capacity(thread_count as usize);
+        for info in info_slice {
+            let frames = if info.frame_count > 0 && !info.frame_buffer.is_null() {
+                unsafe { std::slice::from_raw_parts(info.frame_buffer, info.frame_count as usize).to_vec() }
+            } else {
+                Vec::new()
+            };
+            out.push(StackInfo {
+                thread: info.thread,
+                state: info.state,
+                frames,
+            });
+
+            if !info.frame_buffer.is_null() && !ptr_in_range(info.frame_buffer as *const u8, base, len) {
+                self.deallocate(info.frame_buffer as *mut u8)?;
+            }
+        }
+
+        if !stack_info_ptr.is_null() {
+            self.deallocate(stack_info_ptr as *mut u8)?;
+        }
+        Ok(out)
     }
 
-    pub fn get_thread_list_stack_traces(&self, thread_list: &[jni::jthread], max_frame_count: jni::jint) -> Result<Vec<jvmti::jvmtiStackInfo>, jvmti::jvmtiError> {
+    pub fn get_thread_list_stack_traces(&self, thread_list: &[jni::jthread], max_frame_count: jni::jint) -> Result<Vec<StackInfo>, jvmti::jvmtiError> {
         let mut stack_info_ptr: *mut jvmti::jvmtiStackInfo = ptr::null_mut();
         unsafe {
             let get_list_fn = (*(*self.env).functions).GetThreadListStackTraces.unwrap();
             let err = get_list_fn(self.env, thread_list.len() as jni::jint, thread_list.as_ptr(), max_frame_count, &mut stack_info_ptr);
             if err != jvmti::jvmtiError::NONE { return Err(err); }
-            let stack_info = std::slice::from_raw_parts(stack_info_ptr, thread_list.len()).to_vec();
-            self.deallocate(stack_info_ptr as *mut u8)?;
-            Ok(stack_info)
         }
+        let info_slice = unsafe { std::slice::from_raw_parts(stack_info_ptr, thread_list.len()) };
+        let base = stack_info_ptr as *const u8;
+        let len = thread_list.len() * std::mem::size_of::<jvmti::jvmtiStackInfo>();
+
+        let mut out = Vec::with_capacity(thread_list.len());
+        for info in info_slice {
+            let frames = if info.frame_count > 0 && !info.frame_buffer.is_null() {
+                unsafe { std::slice::from_raw_parts(info.frame_buffer, info.frame_count as usize).to_vec() }
+            } else {
+                Vec::new()
+            };
+            out.push(StackInfo {
+                thread: info.thread,
+                state: info.state,
+                frames,
+            });
+
+            if !info.frame_buffer.is_null() && !ptr_in_range(info.frame_buffer as *const u8, base, len) {
+                self.deallocate(info.frame_buffer as *mut u8)?;
+            }
+        }
+
+        if !stack_info_ptr.is_null() {
+            self.deallocate(stack_info_ptr as *mut u8)?;
+        }
+        Ok(out)
     }
 
     pub fn get_named_module(&self, class_loader: jni::jobject, package_name: &str) -> Result<jni::jobject, jvmti::jvmtiError> {
-        let c_package = std::ffi::CString::new(package_name).unwrap();
+        let c_package = CString::new(package_name).map_err(|_| jvmti::jvmtiError::ILLEGAL_ARGUMENT)?;
         let mut module: jni::jobject = ptr::null_mut();
         unsafe {
             let get_module_fn = (*(*self.env).functions).GetNamedModule.unwrap();
@@ -998,26 +1177,46 @@ impl Jvmti {
         }
     }
 
-    pub fn get_local_variable_table(&self, method: jni::jmethodID) -> Result<Vec<jvmti::jvmtiLocalVariableEntry>, jvmti::jvmtiError> {
+    pub fn get_local_variable_table(&self, method: jni::jmethodID) -> Result<Vec<LocalVariableEntry>, jvmti::jvmtiError> {
         let mut entry_count: jni::jint = 0;
         let mut table_ptr: *mut jvmti::jvmtiLocalVariableEntry = ptr::null_mut();
         unsafe {
             let get_fn = (*(*self.env).functions).GetLocalVariableTable.unwrap();
             let err = get_fn(self.env, method, &mut entry_count, &mut table_ptr);
             if err != jvmti::jvmtiError::NONE { return Err(err); }
-            let table = std::slice::from_raw_parts(table_ptr, entry_count as usize).to_vec();
-            // Note: Each entry has name, signature, generic_signature pointers.
-            // JVMTI docs say for GetLocalVariableTable: "Deallocate the returned table with Deallocate."
-            // "The strings in the jvmtiLocalVariableEntry structures are also allocated... but they are part of the table buffer."
-            // Wait, are they? Usually JVMTI strings are separate allocations.
-            // "The name, signature, and generic_signature fields point to strings which are also returned."
-            // For some functions it specifically says the strings are part of the same buffer, for others it doesn't.
-            // Actually, for GetLocalVariableTable, I should check if I need to deallocate each string.
-            // JVMTI spec: "The returned table is a single block of memory... The strings... are also in this block."
-            // If so, deallocating the table_ptr is enough.
-            self.deallocate(table_ptr as *mut u8)?;
-            Ok(table)
         }
+        let table = unsafe { std::slice::from_raw_parts(table_ptr, entry_count as usize) };
+        let base = table_ptr as *const u8;
+        let len = (entry_count as usize) * std::mem::size_of::<jvmti::jvmtiLocalVariableEntry>();
+
+        let mut out = Vec::with_capacity(entry_count as usize);
+        for entry in table {
+            let name = cstr_to_string(entry.name);
+            let signature = cstr_to_string(entry.signature);
+            let generic_signature = cstr_to_string(entry.generic_signature);
+            out.push(LocalVariableEntry {
+                start_location: entry.start_location,
+                length: entry.length,
+                name,
+                signature,
+                generic_signature,
+                slot: entry.slot,
+            });
+
+            if !entry.name.is_null() && !ptr_in_range(entry.name as *const u8, base, len) {
+                self.deallocate(entry.name as *mut u8)?;
+            }
+            if !entry.signature.is_null() && !ptr_in_range(entry.signature as *const u8, base, len) {
+                self.deallocate(entry.signature as *mut u8)?;
+            }
+            if !entry.generic_signature.is_null() && !ptr_in_range(entry.generic_signature as *const u8, base, len) {
+                self.deallocate(entry.generic_signature as *mut u8)?;
+            }
+        }
+        if !table_ptr.is_null() {
+            self.deallocate(table_ptr as *mut u8)?;
+        }
+        Ok(out)
     }
 
     pub fn get_bytecodes(&self, method: jni::jmethodID) -> Result<Vec<u8>, jvmti::jvmtiError> {
@@ -1086,7 +1285,7 @@ impl Jvmti {
         }
     }
 
-    pub fn get_object_monitor_usage(&self, object: jni::jobject) -> Result<jvmti::jvmtiMonitorUsage, jvmti::jvmtiError> {
+    pub fn get_object_monitor_usage(&self, object: jni::jobject) -> Result<MonitorUsage, jvmti::jvmtiError> {
         let mut info = jvmti::jvmtiMonitorUsage {
             owner: ptr::null_mut(),
             entry_count: 0,
@@ -1099,12 +1298,31 @@ impl Jvmti {
             let get_fn = (*(*self.env).functions).GetObjectMonitorUsage.unwrap();
             let err = get_fn(self.env, object, &mut info);
             if err != jvmti::jvmtiError::NONE { return Err(err); }
-            // Note: info.waiters and info.notify_waiters point to JVMTI-allocated buffers.
-            // But we can't easily deallocate them without losing the pointers if we return the struct.
-            // The user would need to deallocate them.
-            // To be safe, we should probably convert them to Vecs and deallocate.
-            Ok(info)
         }
+        let waiters = if info.waiter_count > 0 && !info.waiters.is_null() {
+            unsafe { std::slice::from_raw_parts(info.waiters, info.waiter_count as usize).to_vec() }
+        } else {
+            Vec::new()
+        };
+        let notify_waiters = if info.notify_waiter_count > 0 && !info.notify_waiters.is_null() {
+            unsafe { std::slice::from_raw_parts(info.notify_waiters, info.notify_waiter_count as usize).to_vec() }
+        } else {
+            Vec::new()
+        };
+
+        if !info.waiters.is_null() {
+            self.deallocate(info.waiters as *mut u8)?;
+        }
+        if !info.notify_waiters.is_null() {
+            self.deallocate(info.notify_waiters as *mut u8)?;
+        }
+
+        Ok(MonitorUsage {
+            owner: info.owner,
+            entry_count: info.entry_count,
+            waiters,
+            notify_waiters,
+        })
     }
 
     pub fn get_tag(&self, object: jni::jobject) -> Result<jni::jlong, jvmti::jvmtiError> {
@@ -1317,7 +1535,7 @@ impl Jvmti {
     }
 
     pub fn add_module_exports(&self, module: jni::jobject, package: &str, to_module: jni::jobject) -> Result<(), jvmti::jvmtiError> {
-        let c_package = std::ffi::CString::new(package).unwrap();
+        let c_package = CString::new(package).map_err(|_| jvmti::jvmtiError::ILLEGAL_ARGUMENT)?;
         unsafe {
             let add_fn = (*(*self.env).functions).AddModuleExports.unwrap();
             let err = add_fn(self.env, module, c_package.as_ptr(), to_module);
@@ -1327,7 +1545,7 @@ impl Jvmti {
     }
 
     pub fn add_module_opens(&self, module: jni::jobject, package: &str, to_module: jni::jobject) -> Result<(), jvmti::jvmtiError> {
-        let c_package = std::ffi::CString::new(package).unwrap();
+        let c_package = CString::new(package).map_err(|_| jvmti::jvmtiError::ILLEGAL_ARGUMENT)?;
         unsafe {
             let add_fn = (*(*self.env).functions).AddModuleOpens.unwrap();
             let err = add_fn(self.env, module, c_package.as_ptr(), to_module);
@@ -1441,30 +1659,142 @@ impl Jvmti {
         Ok(())
     }
 
-    pub fn get_extension_functions(&self) -> Result<Vec<jvmti::jvmtiExtensionFunctionInfo>, jvmti::jvmtiError> {
+    pub fn get_extension_functions(&self) -> Result<Vec<ExtensionFunctionInfo>, jvmti::jvmtiError> {
         let mut count: jni::jint = 0;
         let mut ext_ptr: *mut jvmti::jvmtiExtensionFunctionInfo = ptr::null_mut();
         unsafe {
             let get_fn = (*(*self.env).functions).GetExtensionFunctions.unwrap();
             let err = get_fn(self.env, &mut count, &mut ext_ptr);
             if err != jvmti::jvmtiError::NONE { return Err(err); }
-            let exts = std::slice::from_raw_parts(ext_ptr, count as usize).to_vec();
-            self.deallocate(ext_ptr as *mut u8)?;
-            Ok(exts)
         }
+        let exts = unsafe { std::slice::from_raw_parts(ext_ptr, count as usize) };
+        let base = ext_ptr as *const u8;
+        let len = (count as usize) * std::mem::size_of::<jvmti::jvmtiExtensionFunctionInfo>();
+
+        let mut out = Vec::with_capacity(count as usize);
+        for ext in exts {
+            let id = cstr_to_string(ext.id);
+            let short_description = cstr_to_string(ext.short_description);
+
+            let mut params = Vec::new();
+            if ext.param_count > 0 && !ext.params.is_null() {
+                let params_slice = unsafe { std::slice::from_raw_parts(ext.params, ext.param_count as usize) };
+                let params_base = ext.params as *const u8;
+                let params_len = (ext.param_count as usize) * std::mem::size_of::<jvmti::jvmtiExtensionParamInfo>();
+                for p in params_slice {
+                    let name = cstr_to_string(p.name);
+                    params.push(ExtensionParamInfo {
+                        name,
+                        kind: p.kind,
+                        base_type: p.base_type,
+                        null_ok: p.null_ok != 0,
+                    });
+
+                    if !p.name.is_null()
+                        && !ptr_in_range(p.name as *const u8, params_base, params_len)
+                        && !ptr_in_range(p.name as *const u8, base, len)
+                    {
+                        self.deallocate(p.name as *mut u8)?;
+                    }
+                }
+                if !ptr_in_range(ext.params as *const u8, base, len) {
+                    self.deallocate(ext.params as *mut u8)?;
+                }
+            }
+
+            let errors = if ext.error_count > 0 && !ext.errors.is_null() {
+                unsafe { std::slice::from_raw_parts(ext.errors, ext.error_count as usize).to_vec() }
+            } else {
+                Vec::new()
+            };
+            if !ext.errors.is_null() && !ptr_in_range(ext.errors as *const u8, base, len) {
+                self.deallocate(ext.errors as *mut u8)?;
+            }
+
+            if !ext.id.is_null() && !ptr_in_range(ext.id as *const u8, base, len) {
+                self.deallocate(ext.id as *mut u8)?;
+            }
+            if !ext.short_description.is_null() && !ptr_in_range(ext.short_description as *const u8, base, len) {
+                self.deallocate(ext.short_description as *mut u8)?;
+            }
+
+            out.push(ExtensionFunctionInfo {
+                func: ext.func,
+                id,
+                short_description,
+                params,
+                errors,
+            });
+        }
+
+        if !ext_ptr.is_null() {
+            self.deallocate(ext_ptr as *mut u8)?;
+        }
+        Ok(out)
     }
 
-    pub fn get_extension_events(&self) -> Result<Vec<jvmti::jvmtiExtensionEventInfo>, jvmti::jvmtiError> {
+    pub fn get_extension_events(&self) -> Result<Vec<ExtensionEventInfo>, jvmti::jvmtiError> {
         let mut count: jni::jint = 0;
         let mut ext_ptr: *mut jvmti::jvmtiExtensionEventInfo = ptr::null_mut();
         unsafe {
             let get_fn = (*(*self.env).functions).GetExtensionEvents.unwrap();
             let err = get_fn(self.env, &mut count, &mut ext_ptr);
             if err != jvmti::jvmtiError::NONE { return Err(err); }
-            let exts = std::slice::from_raw_parts(ext_ptr, count as usize).to_vec();
-            self.deallocate(ext_ptr as *mut u8)?;
-            Ok(exts)
         }
+        let exts = unsafe { std::slice::from_raw_parts(ext_ptr, count as usize) };
+        let base = ext_ptr as *const u8;
+        let len = (count as usize) * std::mem::size_of::<jvmti::jvmtiExtensionEventInfo>();
+
+        let mut out = Vec::with_capacity(count as usize);
+        for ext in exts {
+            let id = cstr_to_string(ext.id);
+            let short_description = cstr_to_string(ext.short_description);
+
+            let mut params = Vec::new();
+            if ext.param_count > 0 && !ext.params.is_null() {
+                let params_slice = unsafe { std::slice::from_raw_parts(ext.params, ext.param_count as usize) };
+                let params_base = ext.params as *const u8;
+                let params_len = (ext.param_count as usize) * std::mem::size_of::<jvmti::jvmtiExtensionParamInfo>();
+                for p in params_slice {
+                    let name = cstr_to_string(p.name);
+                    params.push(ExtensionParamInfo {
+                        name,
+                        kind: p.kind,
+                        base_type: p.base_type,
+                        null_ok: p.null_ok != 0,
+                    });
+
+                    if !p.name.is_null()
+                        && !ptr_in_range(p.name as *const u8, params_base, params_len)
+                        && !ptr_in_range(p.name as *const u8, base, len)
+                    {
+                        self.deallocate(p.name as *mut u8)?;
+                    }
+                }
+                if !ptr_in_range(ext.params as *const u8, base, len) {
+                    self.deallocate(ext.params as *mut u8)?;
+                }
+            }
+
+            if !ext.id.is_null() && !ptr_in_range(ext.id as *const u8, base, len) {
+                self.deallocate(ext.id as *mut u8)?;
+            }
+            if !ext.short_description.is_null() && !ptr_in_range(ext.short_description as *const u8, base, len) {
+                self.deallocate(ext.short_description as *mut u8)?;
+            }
+
+            out.push(ExtensionEventInfo {
+                extension_event_index: ext.extension_event_index,
+                id,
+                short_description,
+                params,
+            });
+        }
+
+        if !ext_ptr.is_null() {
+            self.deallocate(ext_ptr as *mut u8)?;
+        }
+        Ok(out)
     }
 
     pub fn set_extension_event_callback(&self, extension_event_index: jni::jint, callback: jvmti::jvmtiExtensionEventCallback) -> Result<(), jvmti::jvmtiError> {
@@ -1488,6 +1818,11 @@ impl Jvmti {
         }
     }
 
+    /// Best-effort conversion of a JVMTI error to a readable string.
+    pub fn error_to_string(&self, error: jvmti::jvmtiError) -> String {
+        self.get_error_name(error).unwrap_or_else(|_| format!("{error:?}"))
+    }
+
     pub fn get_jlocation_format(&self) -> Result<jni::jint, jvmti::jvmtiError> {
         let mut format: jni::jint = 0;
         unsafe {
@@ -1507,9 +1842,13 @@ impl Jvmti {
             if err != jvmti::jvmtiError::NONE { return Err(err); }
             let mut props = Vec::with_capacity(count as usize);
             let slice = std::slice::from_raw_parts(props_ptr, count as usize);
+            let base = props_ptr as *const u8;
+            let len = (count as usize) * std::mem::size_of::<*mut std::os::raw::c_char>();
             for &p_ptr in slice {
                 props.push(std::ffi::CStr::from_ptr(p_ptr).to_string_lossy().into_owned());
-                self.deallocate(p_ptr as *mut u8)?;
+                if !ptr_in_range(p_ptr as *const u8, base, len) {
+                    self.deallocate(p_ptr as *mut u8)?;
+                }
             }
             self.deallocate(props_ptr as *mut u8)?;
             Ok(props)
@@ -1517,7 +1856,7 @@ impl Jvmti {
     }
 
     pub fn get_system_property(&self, property: &str) -> Result<String, jvmti::jvmtiError> {
-        let c_property = std::ffi::CString::new(property).unwrap();
+        let c_property = CString::new(property).map_err(|_| jvmti::jvmtiError::ILLEGAL_ARGUMENT)?;
         let mut value_ptr: *mut std::os::raw::c_char = ptr::null_mut();
         unsafe {
             let get_fn = (*(*self.env).functions).GetSystemProperty.unwrap();
@@ -1530,8 +1869,8 @@ impl Jvmti {
     }
 
     pub fn set_system_property(&self, property: &str, value: &str) -> Result<(), jvmti::jvmtiError> {
-        let c_property = std::ffi::CString::new(property).unwrap();
-        let c_value = std::ffi::CString::new(value).unwrap();
+        let c_property = CString::new(property).map_err(|_| jvmti::jvmtiError::ILLEGAL_ARGUMENT)?;
+        let c_value = CString::new(value).map_err(|_| jvmti::jvmtiError::ILLEGAL_ARGUMENT)?;
         unsafe {
             let set_fn = (*(*self.env).functions).SetSystemProperty.unwrap();
             let err = set_fn(self.env, c_property.as_ptr(), c_value.as_ptr());
@@ -1674,7 +2013,7 @@ impl Jvmti {
     }
 
     pub fn add_to_bootstrap_class_loader_search(&self, segment: &str) -> Result<(), jvmti::jvmtiError> {
-        let c_segment = std::ffi::CString::new(segment).unwrap();
+        let c_segment = CString::new(segment).map_err(|_| jvmti::jvmtiError::ILLEGAL_ARGUMENT)?;
         unsafe {
             let add_fn = (*(*self.env).functions).AddToBootstrapClassLoaderSearch.unwrap();
             let err = add_fn(self.env, c_segment.as_ptr());
@@ -1693,7 +2032,7 @@ impl Jvmti {
     }
 
     pub fn add_to_system_class_loader_search(&self, segment: &str) -> Result<(), jvmti::jvmtiError> {
-        let c_segment = std::ffi::CString::new(segment).unwrap();
+        let c_segment = CString::new(segment).map_err(|_| jvmti::jvmtiError::ILLEGAL_ARGUMENT)?;
         unsafe {
             let add_fn = (*(*self.env).functions).AddToSystemClassLoaderSearch.unwrap();
             let err = add_fn(self.env, c_segment.as_ptr());

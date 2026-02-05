@@ -63,6 +63,11 @@ pub const JVMTI_EVENT_OBJECT_FREE: u32 = 80;
 pub const JVMTI_EVENT_VM_OBJECT_ALLOC: u32 = 81;
 pub const JVMTI_EVENT_SAMPLED_OBJECT_ALLOC: u32 = 82;
 
+// --- Heap Object Filters ---
+pub const JVMTI_HEAP_OBJECT_EITHER: jint = 0;
+pub const JVMTI_HEAP_OBJECT_TAGGED: jint = 1;
+pub const JVMTI_HEAP_OBJECT_UNTAGGED: jint = 2;
+
 
 
 // --- Phases ---
@@ -80,6 +85,7 @@ pub const JVMTI_DISABLE: jint = 0;
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum jvmtiError {
     NONE = 0,
+    ILLEGAL_ARGUMENT = 103,
     INVALID_THREAD = 10,
     INVALID_CLASS = 21,
     NOT_AVAILABLE = 98,

@@ -35,8 +35,7 @@
 //!
 //! **3. Implement your agent (src/lib.rs):**
 //! ```rust,ignore
-//! use jvmti::{Agent, export_agent};
-//! use jvmti::sys::jni;
+//! use jvmti_bindings::prelude::*;
 //!
 //! #[derive(Default)]
 //! struct MyAgent;
@@ -97,6 +96,9 @@
 //! | [`env`] | **High-level wrappers** - start here for ergonomic APIs |
 //! | [`env::Jvmti`] | JVMTI environment wrapper (153 methods) |
 //! | [`env::JniEnv`] | JNI environment wrapper (60+ methods) |
+//! | [`classfile`] | Class file parser with all Java 8-27 attributes |
+//! | [`prelude`] | Recommended imports for agents |
+//! | [`advanced`] | Feature-gated advanced helpers (heap graph utilities) |
 //!
 //! ## Enabling JVMTI Events
 //!
@@ -106,9 +108,7 @@
 //! 3. Enable the specific events
 //!
 //! ```rust,ignore
-//! use jvmti::{Agent, export_agent, get_default_callbacks};
-//! use jvmti::env::Jvmti;
-//! use jvmti::sys::{jni, jvmti};
+//! use jvmti_bindings::prelude::*;
 //!
 //! #[derive(Default)]
 //! struct ClassMonitor;
@@ -149,8 +149,7 @@
 //! Use [`env::JniEnv`] for ergonomic JNI operations:
 //!
 //! ```rust,ignore
-//! use jvmti::env::JniEnv;
-//! use jvmti::sys::jni;
+//! use jvmti_bindings::prelude::*;
 //!
 //! fn vm_init(&self, jni_ptr: *mut jni::JNIEnv, _thread: jni::jthread) {
 //!     let jni = unsafe { JniEnv::from_raw(jni_ptr) };
@@ -191,12 +190,16 @@
 
 pub mod sys;
 pub mod env;
+pub mod classfile;
+pub mod prelude;
+#[cfg(feature = "advanced")]
+pub mod advanced;
 
 // Implementation modules (use `env` module for the public API)
 #[doc(hidden)]
-pub mod jvmti_wrapper;
+pub(crate) mod jvmti_wrapper;
 #[doc(hidden)]
-pub mod jni_wrapper;
+pub(crate) mod jni_wrapper;
 
 use std::sync::OnceLock;
 pub use crate::sys::jni as jni;
@@ -216,7 +219,7 @@ use crate::sys::jvmti as jvmti;
 /// # Example
 ///
 /// ```rust,ignore
-/// use jvmti::{Agent, export_agent, sys::jni};
+/// use jvmti_bindings::prelude::*;
 ///
 /// #[derive(Default)]
 /// struct MyProfiler {
@@ -240,7 +243,7 @@ use crate::sys::jvmti as jvmti;
 /// # Capabilities
 ///
 /// Many events require specific JVMTI capabilities to be enabled. Use
-/// [`wrapper::Jvmti::add_capabilities`] in your `on_load` to request them.
+/// [`env::Jvmti::add_capabilities`] in your `on_load` to request them.
 pub trait Agent: Sync + Send {
     /// Called when the agent is loaded into the JVM.
     ///
@@ -252,6 +255,13 @@ pub trait Agent: Sync + Send {
     ///
     /// Return `JNI_OK` (0) on success, or `JNI_ERR` (-1) on failure.
     fn on_load(&self, vm: *mut jni::JavaVM, options: &str) -> jni::jint;
+
+    /// Called when the agent is attached to a running JVM (dynamic attach).
+    ///
+    /// Default implementation returns `JNI_OK`.
+    fn on_attach(&self, _vm: *mut jni::JavaVM, _options: &str) -> jni::jint {
+        jni::JNI_OK
+    }
 
     /// Called when the agent is unloaded (JVM shutdown).
     ///
@@ -423,14 +433,14 @@ pub trait Agent: Sync + Send {
     ///
     /// Set up with `set_field_access_watch`. Requires `can_generate_field_access_events`.
     fn field_access(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread, _method: jni::jmethodID,
-                    _location: jvmti::jlocation, _field_klass: jni::jclass, _object: jni::jobject, _field: jni::jobject) {}
+                    _location: jvmti::jlocation, _field_klass: jni::jclass, _object: jni::jobject, _field: jni::jfieldID) {}
 
     /// Called when a watched field is modified.
     ///
     /// Set up with `set_field_modification_watch`. Requires `can_generate_field_modification_events`.
     fn field_modification(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread, _method: jni::jmethodID,
                           _location: jvmti::jlocation, _field_klass: jni::jclass, _object: jni::jobject,
-                          _field: jni::jobject, _sig_type: std::os::raw::c_char, _new_value: jni::jvalue) {}
+                          _field: jni::jfieldID, _sig_type: std::os::raw::c_char, _new_value: jni::jvalue) {}
 
     // =========================================================================
     // GC & MEMORY EVENTS
@@ -619,15 +629,14 @@ unsafe extern "system" fn trampoline_field_access(
     _env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread, method: jni::jmethodID,
     location: jvmti::jlocation, field_klass: jni::jclass, object: jni::jobject, field: crate::sys::jni::jfieldID
 ) {
-    // Cast fieldID to jobject (void*) to match trait signature, or update trait to use jfieldID
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.field_access(jni, thread, method, location, field_klass, object, field as jni::jobject); }
+    if let Some(agent) = GLOBAL_AGENT.get() { agent.field_access(jni, thread, method, location, field_klass, object, field); }
 }
 unsafe extern "system" fn trampoline_field_modification(
     _env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread, method: jni::jmethodID,
     location: jvmti::jlocation, field_klass: jni::jclass, object: jni::jobject, field: crate::sys::jni::jfieldID,
     sig_type: std::os::raw::c_char, new_value: jni::jvalue
 ) {
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.field_modification(jni, thread, method, location, field_klass, object, field as jni::jobject, sig_type, new_value); }
+    if let Some(agent) = GLOBAL_AGENT.get() { agent.field_modification(jni, thread, method, location, field_klass, object, field, sig_type, new_value); }
 }
 
 // --- 7. GC & Resource ---
@@ -668,22 +677,21 @@ unsafe extern "system" fn trampoline_sampled_object_alloc(
 ///
 /// This function populates a callbacks struct that routes all JVMTI events to your
 /// [`Agent`] implementation via the global agent instance. Use this with
-/// [`wrapper::Jvmti::set_event_callbacks`] to enable event delivery.
+/// [`env::Jvmti::set_event_callbacks`] to enable event delivery.
 ///
 /// # Example
 ///
 /// ```rust,ignore
 /// fn on_load(&self, vm: *mut jni::JavaVM, options: &str) -> jni::jint {
-///     let jvmti = jvmti::wrapper::Jvmti::from_java_vm(vm).unwrap();
+///     let jvmti = Jvmti::new(vm).unwrap();
 ///
 ///     // Wire up all event callbacks
-///     let callbacks = jvmti::get_default_callbacks();
+///     let callbacks = get_default_callbacks();
 ///     jvmti.set_event_callbacks(&callbacks);
 ///
 ///     // Enable specific events you care about
-///     jvmti.set_event_notification_mode(
-///         jvmti::sys::jvmti::JVMTI_ENABLE,
-///         jvmti::sys::jvmti::JVMTI_EVENT_VM_INIT,
+///     jvmti.enable_event(
+///         jvmti::JVMTI_EVENT_VM_INIT,
 ///         std::ptr::null_mut()
 ///     );
 ///
@@ -780,7 +788,7 @@ pub fn get_default_callbacks() -> jvmti::jvmtiEventCallbacks {
 /// # Example
 ///
 /// ```rust,ignore
-/// use jvmti::{Agent, export_agent, sys::jni};
+/// use jvmti_bindings::prelude::*;
 ///
 /// #[derive(Default)]
 /// struct MyAgent {
@@ -866,6 +874,34 @@ macro_rules! export_agent {
             // 3. Call the User's Logic
             if let Some(global_agent) = $crate::GLOBAL_AGENT.get() {
                 return global_agent.on_load(vm, options_str);
+            }
+
+            $crate::sys::jni::JNI_ERR
+        }
+
+        #[no_mangle]
+        pub unsafe extern "system" fn Agent_OnAttach(
+            vm: *mut $crate::sys::jni::JavaVM,
+            options: *mut std::ffi::c_char,
+            reserved: *mut std::ffi::c_void,
+        ) -> $crate::sys::jni::jint {
+
+            // 1. Create and Register the Agent
+            let agent = Box::new(<$agent_type>::default());
+            if let Err(_) = $crate::set_global_agent(agent) {
+                return $crate::sys::jni::JNI_ERR;
+            }
+
+            // 2. Handle Options
+            let options_str = if options.is_null() {
+                ""
+            } else {
+                std::ffi::CStr::from_ptr(options).to_str().unwrap_or("")
+            };
+
+            // 3. Call the User's Logic
+            if let Some(global_agent) = $crate::GLOBAL_AGENT.get() {
+                return global_agent.on_attach(vm, options_str);
             }
 
             $crate::sys::jni::JNI_ERR
