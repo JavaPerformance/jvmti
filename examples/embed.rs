@@ -35,6 +35,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("java.version={}", version);
     }
 
-    vm.destroy()?;
+    if let Err(code) = vm.destroy() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("DestroyJavaVM failed: {code}"),
+        )
+        .into());
+    }
     Ok(())
 }
