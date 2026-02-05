@@ -218,6 +218,28 @@ fn parse_class(bytes: &[u8]) {
 }
 ```
 
+## Embedding A JVM (Optional)
+
+If you want to **embed** a JVM inside a Rust process (not just build an agent), enable the `embed` feature and use `JavaVmBuilder`:
+
+```rust,ignore
+use jvmti_bindings::prelude::*;
+
+let builder = JavaVmBuilder::new(jni::JNI_VERSION_1_8)
+    .option("-Xms64m")?
+    .option("-Xmx256m")?
+    .option("-Djava.class.path=./myapp.jar")?;
+
+let vm = builder.create_from_library(\"/path/to/libjvm.so\")?;
+let env = unsafe { vm.creator_env() }; // only valid on the creating thread
+
+// ... call JNI through env ...
+
+vm.destroy()?;
+```
+
+This is feature-gated so the crate remains dependency-free by default. See `docs/EMBEDDING.md` for details.
+
 ## Examples
 
 Included examples (build as `cdylib` agents):
@@ -409,6 +431,7 @@ cargo build --release --example class_logger
 - [**Changelog**](CHANGELOG.md) — Release notes and breaking changes
 - [**Comparison With Alternatives**](docs/COMPARISON.md) — Feature parity and positioning
 - [**Benchmarks**](docs/BENCHMARKS.md) — How to run and view Criterion reports
+- [**Embedding A JVM**](docs/EMBEDDING.md) — Start a JVM from Rust and attach threads
 - [**Safety and FFI Checklist**](docs/SAFETY.md) — Safety rules and audit checklist
 - [**Pitfalls and Footguns**](docs/PITFALLS.md) — Common JVMTI/JNI traps
 - [**Compatibility Matrix**](docs/COMPATIBILITY.md) — JDK 8-27 coverage

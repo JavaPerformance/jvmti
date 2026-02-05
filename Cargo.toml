@@ -19,12 +19,14 @@ categories = ["api-bindings", "development-tools::profiling", "external-ffi-bind
 [dependencies]
 # No external dependencies by default - all JNI/JVMTI bindings are internal
 zip = { version = "0.6", optional = true }
+libloading = { version = "0.8", optional = true }
 
 [features]
 default = []
 advanced = []
 heap-graph = ["advanced"]
 bench-tools = ["zip"]
+embed = ["libloading"]
 
 [dev-dependencies]
 criterion = "0.5"

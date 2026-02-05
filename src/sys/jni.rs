@@ -1251,6 +1251,22 @@ pub struct JavaVMAttachArgs {
 }
 
 // =============================================================================
+// Invocation API function pointer types (JNI_CreateJavaVM, etc.)
+// =============================================================================
+
+pub type JNI_CreateJavaVM = unsafe extern "system" fn(
+    pvm: *mut *mut JavaVM,
+    penv: *mut *mut JNIEnv,
+    args: *mut JavaVMInitArgs,
+) -> jint;
+
+pub type JNI_GetCreatedJavaVMs = unsafe extern "system" fn(
+    vm_buf: *mut *mut JavaVM,
+    buf_len: jsize,
+    n_vms: *mut jsize,
+) -> jint;
+
+// =============================================================================
 // Helper macros and functions
 // =============================================================================
 

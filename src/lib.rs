@@ -192,6 +192,8 @@ pub mod sys;
 pub mod env;
 pub mod classfile;
 pub mod prelude;
+#[cfg(feature = "embed")]
+pub mod embed;
 #[cfg(feature = "advanced")]
 pub mod advanced;
 

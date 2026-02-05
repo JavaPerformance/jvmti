@@ -8,3 +8,5 @@ pub use crate::export_agent;
 pub use crate::get_default_callbacks;
 pub use crate::sys::{jni, jvmti};
 pub use crate::Agent;
+#[cfg(feature = "embed")]
+pub use crate::embed::{JavaVm, JavaVmBuilder};

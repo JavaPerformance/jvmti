@@ -7,11 +7,12 @@ This document captures the safety model for `jvmti-bindings` and a checklist to 
 1. Treat all JNI/JVMTI callbacks as `unsafe` boundaries.
 2. Never panic across a JNI/JVMTI callback boundary.
 3. Do not store or share `JNIEnv` across threads.
-4. Use `GlobalRef` for long-lived references and ensure they are released.
-5. Always check JVMTI error codes and handle failures explicitly.
-6. Assume callbacks can be concurrent and re-entrant.
-7. Avoid long-running work inside callbacks; offload to worker threads.
-8. Respect callback-specific constraints (some callbacks forbid JNI).
+4. For embedded JVMs, only use `creator_env` on the creating thread; attach/detach other threads.
+5. Use `GlobalRef` for long-lived references and ensure they are released.
+6. Always check JVMTI error codes and handle failures explicitly.
+7. Assume callbacks can be concurrent and re-entrant.
+8. Avoid long-running work inside callbacks; offload to worker threads.
+9. Respect callback-specific constraints (some callbacks forbid JNI).
 
 ## Agent Safety Checklist
 
