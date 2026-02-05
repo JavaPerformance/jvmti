@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.1
+
+### Fixed
+1. README and documentation alignment with 2.0 behavior (prelude-first, classfile parser, dynamic attach, and safety model).
+
 ## 2.0.0
 
 ### Breaking changes
