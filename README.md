@@ -194,6 +194,14 @@ impl Agent for AttachLogger {
 export_agent!(AttachLogger);
 ```
 
+Attach it with `jcmd` (example):
+
+```bash
+jcmd <pid> JVMTI.agent_load /abs/path/to/libattach_logger.so "opt1=val1"
+```
+
+`JVMTI.agent_load` expects an **absolute** path to the native agent and an optional option string.
+
 ## Class File Parsing
 
 This crate now includes a zero-dependency class file parser that understands all standard attributes from Java 8 through Java 27. Use it inside `ClassFileLoadHook` to inspect or transform class metadata.
