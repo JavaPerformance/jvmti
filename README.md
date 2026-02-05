@@ -187,6 +187,37 @@ fn parse_class(bytes: &[u8]) {
 }
 ```
 
+Nested attributes are preserved and exposed (method `Code` attributes, record component attributes, and more). You can traverse them like this:
+
+```rust
+use jvmti_bindings::classfile::{AttributeInfo, ClassFile, RecordComponent};
+
+fn walk_attributes(attrs: &[AttributeInfo]) {
+    for attr in attrs {
+        match attr {
+            AttributeInfo::Code(code) => walk_attributes(&code.attributes),
+            AttributeInfo::Record { components } => {
+                for RecordComponent { attributes, .. } in components {
+                    walk_attributes(attributes);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn parse_class(bytes: &[u8]) {
+    let classfile = ClassFile::parse(bytes).expect("valid class file");
+    walk_attributes(&classfile.attributes);
+    for field in &classfile.fields {
+        walk_attributes(&field.attributes);
+    }
+    for method in &classfile.methods {
+        walk_attributes(&method.attributes);
+    }
+}
+```
+
 ## Examples
 
 Included examples (build as `cdylib` agents):
