@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.2
+
+### Fixed
+1. Corrected crates.io documentation link to point at `docs.rs/jvmti-bindings`.
+
 ## 2.0.1
 
 ### Fixed
