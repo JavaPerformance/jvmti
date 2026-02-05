@@ -22,7 +22,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .option("-Xmx256m")?
         .option("-Djava.class.path=./myapp.jar")?;
 
-    let vm = builder.create_from_library("/path/to/libjvm.so")?;
+    // Uses JVM_LIB_PATH or JAVA_HOME for auto-discovery.
+    let vm = builder.create()?;
 
     // Only valid on the creating thread:
     let env = unsafe { vm.creator_env() };
@@ -40,8 +41,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 - For any other thread, use `attach_current_thread()` and call
   `detach_current_thread()` when you are done.
 
+## Discovery
+
+The helper uses:
+
+1. `JVM_LIB_PATH` if set (absolute path to `libjvm`)
+2. `JAVA_HOME` with common JDK layouts
+
+If discovery fails, call `create_from_library("/path/to/libjvm.so")` directly.
+
 ## Notes
 
 - On Linux, `libjvm.so` is typically under `${JAVA_HOME}/lib/server/`.
+- On macOS, `libjvm.dylib` is typically under `${JAVA_HOME}/lib/server/`.
+- On Windows, `jvm.dll` is typically under `${JAVA_HOME}\\bin\\server\\`.
 - If you already link to `libjvm` and have a `JNI_CreateJavaVM` symbol,
   you can call `JavaVmBuilder::create_with` directly (unsafe).

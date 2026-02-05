@@ -230,7 +230,7 @@ let builder = JavaVmBuilder::new(jni::JNI_VERSION_1_8)
     .option("-Xmx256m")?
     .option("-Djava.class.path=./myapp.jar")?;
 
-let vm = builder.create_from_library(\"/path/to/libjvm.so\")?;
+let vm = builder.create()?; // uses JAVA_HOME or JVM_LIB_PATH
 let env = unsafe { vm.creator_env() }; // only valid on the creating thread
 
 // ... call JNI through env ...
@@ -238,7 +238,7 @@ let env = unsafe { vm.creator_env() }; // only valid on the creating thread
 vm.destroy()?;
 ```
 
-This is feature-gated so the crate remains dependency-free by default. See `docs/EMBEDDING.md` for details.
+This is feature-gated so the crate remains dependency-free by default. See `docs/EMBEDDING.md` and `examples/embed.rs` for details.
 
 ## Examples
 
@@ -248,6 +248,9 @@ Included examples (build as `cdylib` agents):
 3. `examples/profiler.rs`
 4. `examples/tracer.rs`
 5. `examples/heap_sampler.rs`
+
+Embedding example (binary):
+`examples/embed.rs` (run with `cargo run --example embed --features embed`)
 
 ## Agent Starter Template
 

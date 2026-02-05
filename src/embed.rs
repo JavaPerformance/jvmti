@@ -4,7 +4,7 @@
 //! dependency-free by default.
 
 use std::ffi::{CString, NulError};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::ptr;
 
 use crate::env::JniEnv;
@@ -16,6 +16,7 @@ pub enum EmbedError {
     Nul(NulError),
     Load(String),
     Jni(jni::jint),
+    Locate(String),
 }
 
 impl std::fmt::Display for EmbedError {
@@ -24,6 +25,7 @@ impl std::fmt::Display for EmbedError {
             EmbedError::Nul(e) => write!(f, "invalid option (NUL byte): {e}"),
             EmbedError::Load(e) => write!(f, "failed to load libjvm: {e}"),
             EmbedError::Jni(code) => write!(f, "JNI error: {code}"),
+            EmbedError::Locate(msg) => write!(f, "{msg}"),
         }
     }
 }
@@ -34,6 +36,74 @@ impl From<NulError> for EmbedError {
     fn from(value: NulError) -> Self {
         EmbedError::Nul(value)
     }
+}
+
+fn libjvm_filename() -> &'static str {
+    #[cfg(target_os = "windows")]
+    {
+        "jvm.dll"
+    }
+    #[cfg(target_os = "macos")]
+    {
+        "libjvm.dylib"
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        "libjvm.so"
+    }
+}
+
+fn candidates_from_java_home(java_home: &Path) -> Vec<PathBuf> {
+    let filename = libjvm_filename();
+    let arch = std::env::consts::ARCH;
+
+    let mut rels = vec![
+        format!("lib/server/{filename}"),
+        format!("jre/lib/server/{filename}"),
+        format!("lib/{arch}/server/{filename}"),
+        format!("jre/lib/{arch}/server/{filename}"),
+    ];
+
+    if cfg!(target_os = "windows") {
+        rels.push(format!("bin/server/{filename}"));
+        rels.push(format!("jre/bin/server/{filename}"));
+        rels.push(format!("bin/client/{filename}"));
+        rels.push(format!("jre/bin/client/{filename}"));
+    }
+
+    rels.into_iter().map(|r| java_home.join(r)).collect()
+}
+
+/// Try to locate `libjvm` using `JVM_LIB_PATH` or `JAVA_HOME`.
+pub fn find_libjvm() -> Result<PathBuf, EmbedError> {
+    if let Some(path) = std::env::var_os("JVM_LIB_PATH") {
+        let path = PathBuf::from(path);
+        if path.exists() {
+            return Ok(path);
+        }
+        return Err(EmbedError::Locate(format!(
+            "JVM_LIB_PATH is set but does not exist: {}",
+            path.display()
+        )));
+    }
+
+    if let Some(java_home) = std::env::var_os("JAVA_HOME") {
+        let java_home = PathBuf::from(java_home);
+        for candidate in candidates_from_java_home(&java_home) {
+            if candidate.exists() {
+                return Ok(candidate);
+            }
+        }
+        return Err(EmbedError::Locate(format!(
+            "Could not find {} under JAVA_HOME={}. Set JVM_LIB_PATH explicitly.",
+            libjvm_filename(),
+            java_home.display()
+        )));
+    }
+
+    Err(EmbedError::Locate(
+        "JAVA_HOME is not set. Set JAVA_HOME or JVM_LIB_PATH to locate libjvm.".to_string(),
+    ))
 }
 
 /// Builder for creating an embedded JVM.
@@ -146,6 +216,28 @@ impl JavaVmBuilder {
             _lib: Some(lib),
             ..vm
         })
+    }
+
+    /// Create a JVM by locating `libjvm` from `JVM_LIB_PATH` or `JAVA_HOME`.
+    pub fn create(self) -> Result<JavaVm, EmbedError> {
+        let path = find_libjvm()?;
+        self.create_from_library(path)
+    }
+
+    /// Create a JVM using a specific `JAVA_HOME`.
+    pub fn create_from_java_home<P: AsRef<Path>>(self, java_home: P) -> Result<JavaVm, EmbedError> {
+        let java_home = java_home.as_ref();
+        let candidate = candidates_from_java_home(java_home)
+            .into_iter()
+            .find(|p| p.exists())
+            .ok_or_else(|| {
+                EmbedError::Locate(format!(
+                    "Could not find {} under JAVA_HOME={}.",
+                    libjvm_filename(),
+                    java_home.display()
+                ))
+            })?;
+        self.create_from_library(candidate)
     }
 }
 
