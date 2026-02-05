@@ -248,6 +248,7 @@ Included examples (build as `cdylib` agents):
 3. `examples/profiler.rs`
 4. `examples/tracer.rs`
 5. `examples/heap_sampler.rs`
+6. `examples/attach_logger.rs` (dynamic attach via `Agent_OnAttach`)
 
 Embedding example (binary):
 `examples/embed.rs` (run with `cargo run --example embed --features embed`)
@@ -435,6 +436,7 @@ cargo build --release --example class_logger
 - [**Comparison With Alternatives**](docs/COMPARISON.md) — Feature parity and positioning
 - [**Benchmarks**](docs/BENCHMARKS.md) — How to run and view Criterion reports
 - [**Embedding A JVM**](docs/EMBEDDING.md) — Start a JVM from Rust and attach threads
+- [**Dynamic Attach**](docs/ATTACH.md) — Agent_OnAttach example and notes
 - [**Safety and FFI Checklist**](docs/SAFETY.md) — Safety rules and audit checklist
 - [**Pitfalls and Footguns**](docs/PITFALLS.md) — Common JVMTI/JNI traps
 - [**Compatibility Matrix**](docs/COMPATIBILITY.md) — JDK 8-27 coverage
