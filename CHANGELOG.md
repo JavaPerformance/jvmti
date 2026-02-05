@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.1.0
+
+### Added
+1. JVM embedding helpers behind the `embed` feature (`JavaVmBuilder`, `JavaVm`) with `JAVA_HOME`/`JVM_LIB_PATH` discovery.
+2. Embedding documentation and runnable example (`docs/EMBEDDING.md`, `examples/embed.rs`).
+3. Dynamic attach documentation and example (`docs/ATTACH.md`, `examples/attach_logger.rs`).
+4. Benchmark guide plus streaming JAR parser tool (`docs/BENCHMARKS.md`, `jar_parse_bench`).
+5. Comparison matrix doc for alternative crates (`docs/COMPARISON.md`).
+
+### Fixed
+1. CI example builds (feature-gated embed example and attach logger `on_load` stub).
+
 ## 2.0.2
 
 ### Fixed
