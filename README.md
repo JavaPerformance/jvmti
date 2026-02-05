@@ -1,4 +1,7 @@
 # jvmti-bindings
+[![Crates.io](https://img.shields.io/crates/v/jvmti-bindings.svg)](https://crates.io/crates/jvmti-bindings)
+[![Docs.rs](https://docs.rs/jvmti-bindings/badge.svg)](https://docs.rs/jvmti-bindings)
+[![CI](https://github.com/JavaPerformance/jvmti/actions/workflows/ci.yml/badge.svg)](https://github.com/JavaPerformance/jvmti/actions/workflows/ci.yml)
 
 Write JVM agents in Rust with explicit safety boundaries and production-grade ergonomics.
 
