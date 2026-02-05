@@ -50,6 +50,14 @@ The helper uses:
 
 If discovery fails, call `create_from_library("/path/to/libjvm.so")` directly.
 
+To print the discovered path, use:
+
+```rust,ignore
+use jvmti_bindings::embed::find_libjvm_verbose;
+let libjvm = find_libjvm_verbose()?;
+let vm = builder.create_from_library(libjvm)?;
+```
+
 ## Notes
 
 - On Linux, `libjvm.so` is typically under `${JAVA_HOME}/lib/server/`.

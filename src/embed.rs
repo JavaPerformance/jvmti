@@ -53,6 +53,21 @@ fn libjvm_filename() -> &'static str {
     }
 }
 
+fn platform_hint() -> &'static str {
+    #[cfg(target_os = "windows")]
+    {
+        "Typical path: %JAVA_HOME%\\bin\\server\\jvm.dll"
+    }
+    #[cfg(target_os = "macos")]
+    {
+        "Typical path: $JAVA_HOME/lib/server/libjvm.dylib"
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        "Typical path: $JAVA_HOME/lib/server/libjvm.so"
+    }
+}
+
 fn candidates_from_java_home(java_home: &Path) -> Vec<PathBuf> {
     let filename = libjvm_filename();
     let arch = std::env::consts::ARCH;
@@ -89,21 +104,33 @@ pub fn find_libjvm() -> Result<PathBuf, EmbedError> {
 
     if let Some(java_home) = std::env::var_os("JAVA_HOME") {
         let java_home = PathBuf::from(java_home);
-        for candidate in candidates_from_java_home(&java_home) {
+        let candidates = candidates_from_java_home(&java_home);
+        for candidate in candidates.iter() {
             if candidate.exists() {
-                return Ok(candidate);
+                return Ok(candidate.clone());
             }
         }
         return Err(EmbedError::Locate(format!(
-            "Could not find {} under JAVA_HOME={}. Set JVM_LIB_PATH explicitly.",
+            "Could not find {} under JAVA_HOME={}. {} Set JVM_LIB_PATH explicitly.",
             libjvm_filename(),
-            java_home.display()
+            java_home.display(),
+            platform_hint()
         )));
     }
 
     Err(EmbedError::Locate(
-        "JAVA_HOME is not set. Set JAVA_HOME or JVM_LIB_PATH to locate libjvm.".to_string(),
+        format!(
+            "JAVA_HOME is not set. Set JAVA_HOME or JVM_LIB_PATH to locate libjvm. {}",
+            platform_hint()
+        ),
     ))
+}
+
+/// Like `find_libjvm`, but prints the discovered path to stderr.
+pub fn find_libjvm_verbose() -> Result<PathBuf, EmbedError> {
+    let path = find_libjvm()?;
+    eprintln!("libjvm={}", path.display());
+    Ok(path)
 }
 
 /// Builder for creating an embedded JVM.
