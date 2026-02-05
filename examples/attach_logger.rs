@@ -9,6 +9,10 @@ use jvmti_bindings::prelude::*;
 struct AttachLogger;
 
 impl Agent for AttachLogger {
+    fn on_load(&self, _vm: *mut jni::JavaVM, _options: &str) -> jni::jint {
+        jni::JNI_OK
+    }
+
     fn on_attach(&self, vm: *mut jni::JavaVM, options: &str) -> jni::jint {
         println!("[AttachLogger] attached with options: {}", options);
 

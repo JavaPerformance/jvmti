@@ -72,6 +72,14 @@ crate-type = ["cdylib"]
 name = "heap_sampler"
 crate-type = ["cdylib"]
 
+[[example]]
+name = "attach_logger"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "embed"
+required-features = ["embed"]
+
 [[bench]]
 name = "classfile_parse"
 harness = false
