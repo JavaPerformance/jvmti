@@ -26,9 +26,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let vm = builder.create()?;
 
     // Only valid on the creating thread:
-    let env = unsafe { vm.creator_env() };
-    let system = env.find_class("java/lang/System").unwrap();
-    let _ = system;
+let env = unsafe { vm.creator_env() };
+let system = env.find_class("java/lang/System").unwrap();
+let get_prop = env
+    .get_static_method_id(system, "getProperty", "(Ljava/lang/String;)Ljava/lang/String;")
+    .unwrap();
+let key = env.new_string_utf("java.version").unwrap();
+let value = env.call_static_object_method(system, get_prop, &[jni::jvalue { l: key }]);
+let version = env.get_string_utf(value).unwrap_or_else(|| "<unknown>".to_string());
+println!("java.version={}", version);
 
     vm.destroy()?;
     Ok(())
