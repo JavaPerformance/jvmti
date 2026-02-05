@@ -407,6 +407,7 @@ cargo build --release --example class_logger
 - [**Public API Report**](docs/PUBLIC_API_REPORT.md) — Snapshot of the public surface
 - [**API Report Script**](scripts/public_api_report.sh) — Regenerate the report with rustdoc JSON
 - [**Changelog**](CHANGELOG.md) — Release notes and breaking changes
+- [**Comparison With Alternatives**](docs/COMPARISON.md) — Feature parity and positioning
 - [**Safety and FFI Checklist**](docs/SAFETY.md) — Safety rules and audit checklist
 - [**Pitfalls and Footguns**](docs/PITFALLS.md) — Common JVMTI/JNI traps
 - [**Compatibility Matrix**](docs/COMPATIBILITY.md) — JDK 8-27 coverage
