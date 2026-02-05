@@ -17,12 +17,14 @@ keywords = ["jvm", "jni", "jvmti", "java", "agent"]
 categories = ["api-bindings", "development-tools::profiling", "external-ffi-bindings"]
 
 [dependencies]
-# No external dependencies - all JNI/JVMTI bindings are internal
+# No external dependencies by default - all JNI/JVMTI bindings are internal
+zip = { version = "0.6", optional = true }
 
 [features]
 default = []
 advanced = []
 heap-graph = ["advanced"]
+bench-tools = ["zip"]
 
 [dev-dependencies]
 criterion = "0.5"
@@ -71,3 +73,8 @@ crate-type = ["cdylib"]
 [[bench]]
 name = "classfile_parse"
 harness = false
+
+[[bin]]
+name = "jar_parse_bench"
+path = "src/bin/jar_parse_bench.rs"
+required-features = ["bench-tools"]
