@@ -32,22 +32,14 @@ This crate was designed around how agents are actually written, not around mirro
 
 ## Comparison with Alternatives
 
-| Feature | jvmti-bindings | jni | jvmti-rs | jni-simple |
-|---------|----------------|-----|----------|------------|
-| **JVMTI support** | ✅ 156/156 (100%) | ❌ None | ⚠️ Partial | ⚠️ Untested |
-| **JNI support** | ✅ 236/236 (100%) | ✅ Complete | ⚠️ Partial | ✅ Complete |
-| **Agent trait** | ✅ Yes | ❌ No | ❌ No | ❌ No |
-| **RAII guards** | ✅ LocalRef, GlobalRef | ✅ Yes | ❌ No | ❌ No |
-| **Dependencies** | 0 | 3+ | 1+ | 1 |
-| **Build-time JDK** | ❌ Not needed | ❌ Not needed | ✅ Required | ❌ Not needed |
-| **Last updated** | 2025 | 2024 | 2024 | 2024 |
-| **JDK range** | 8–27 | 8–21 | Unknown | 8–21 |
+If you only need JNI to call into Java from Rust applications, crates like `jni` or `jni-simple` are often sufficient. This crate is purpose-built for **JVMTI agents** (profilers, tracers, debuggers, instrumentation) and emphasizes:
 
-**When to use what:**
-- **jvmti-bindings**: Building JVMTI agents (profilers, tracers, debuggers)
-- **jni**: Calling Java from Rust applications (not agents)
-- **jvmti-rs**: Legacy projects already using it
-- **jni-simple**: Minimal JNI with no frills
+1. Full JNI + JVMTI coverage (agent-first focus)
+2. Safe, owned return types in the high-level `env` wrappers
+3. Class file parsing with all standard Java 8-27 attributes
+4. A tiny but explicit public surface (`env`, `sys`, `classfile`, `prelude`)
+5. Safety guidance, pitfalls, and compatibility documentation
+6. Examples that mirror real JVMTI tooling patterns
 
 ## Why Rust for JVMTI?
 
@@ -214,16 +206,16 @@ The repository includes a GitHub Actions workflow that builds and tests on Linux
 The macro generates the native entry points the JVM expects.
 
 **It does:**
-- Generate `Agent_OnLoad` / `Agent_OnUnload` FFI entry points
-- Initialize JNI and JVMTI environments
-- Register callbacks before enabling events
-- Convert JVMTI error codes into `Result<T, JvmtiError>`
-- Store your agent instance globally (must be `Sync + Send`)
+- Generate `Agent_OnLoad` / `Agent_OnUnload` / `Agent_OnAttach` entry points
+- Create your agent instance and store it globally (must be `Sync + Send`)
+- Pass the options string to your `on_load` / `on_attach` implementation
 
 **It does not:**
 - Hide undefined JVMTI behavior
 - Make callbacks re-entrant or async-safe
 - Attach arbitrary native threads automatically
+- Obtain the JVMTI environment for you
+- Register callbacks or enable events
 - Prevent JVM crashes from invalid JVMTI usage
 
 The goal is clarity, not magic.
@@ -237,8 +229,8 @@ This crate enforces the following invariants:
 | `JNIEnv` is thread-local | `JniEnv` wrapper is not `Send` |
 | Local refs don't escape | `LocalRef<'a>` tied to `JniEnv` lifetime |
 | Global refs are freed | `GlobalRef` releases on `Drop` |
-| JVMTI memory properly freed | Wrapper methods handle alloc/dealloc |
-| Errors are never ignored | All methods return `Result<T, jvmtiError>` |
+| JVMTI memory properly freed | High-level JVMTI methods deallocate buffers they allocate |
+| Errors are explicit | JVMTI methods return `Result`, JNI helpers use `Option`/`Result` |
 
 ### What Remains Unsafe
 
@@ -262,7 +254,7 @@ Rust helps — but JVMTI is still a sharp tool.
 **Probably not, if you:**
 - Only need basic JNI calls (consider the `jni` crate)
 - Are uncomfortable debugging native JVM crashes
-- Need dynamic attach API (not yet wrapped)
+- Need dynamic attach (use `Agent::on_attach` / `Agent_OnAttach`)
 - Want zero `unsafe` anywhere
 
 ## Architecture
@@ -276,10 +268,16 @@ Rust helps — but JVMTI is still a sharp tool.
 │      Agent, export_agent!, get_default_callbacks()       │
 ├─────────────────────────────────────────────────────────┤
 │              High-Level Wrappers (env module)            │
-│   Jvmti      - JVMTI operations (153 methods)            │
+│   Jvmti      - JVMTI operations (150+ methods)           │
 │   JniEnv     - JNI operations (60+ methods)              │
 │   LocalRef   - RAII guard, prevented from escaping       │
 │   GlobalRef  - RAII guard, releases on drop              │
+├─────────────────────────────────────────────────────────┤
+│              Class File Parser (classfile)               │
+│   ClassFile  - All standard Java 8-27 attributes         │
+├─────────────────────────────────────────────────────────┤
+│              Convenience Imports (prelude)               │
+│   prelude::* - Agent, env, sys, helpers                  │
 ├─────────────────────────────────────────────────────────┤
 │              Raw FFI Bindings (sys module)               │
 │   sys::jni   - Complete JNI vtable (236 functions)       │
@@ -307,8 +305,7 @@ fn on_load(&self, vm: *mut jni::JavaVM, _options: &str) -> jni::jint {
     jvmti_env.set_event_callbacks(callbacks).expect("callbacks");
 
     // 3. Enable specific events
-    jvmti_env.set_event_notification_mode(
-        true,
+    jvmti_env.enable_event(
         jvmti::JVMTI_EVENT_CLASS_FILE_LOAD_HOOK,
         std::ptr::null_mut(),
     ).expect("enable");

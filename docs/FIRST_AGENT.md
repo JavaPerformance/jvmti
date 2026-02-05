@@ -178,7 +178,7 @@ JVMTI requires a specific order. Get this wrong and the JVM will crash or silent
 3. Enable events         →  Only after callbacks are registered
 ```
 
-The `export_agent!` macro handles some of this, but **you** must:
+The `export_agent!` macro only creates the required entry points. **You** must:
 - Choose which capabilities to request
 - Choose which events to enable
 - Handle errors explicitly
