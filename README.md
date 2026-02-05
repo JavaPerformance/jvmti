@@ -173,6 +173,27 @@ java -agentpath:./target/release/libmy_agent.dylib=myoptions MyApp
 java -agentpath:./target/release/my_agent.dll=myoptions MyApp
 ```
 
+### Dynamic Attach (Optional)
+
+If you want to attach to an already running JVM, implement `Agent::on_attach` and load the agent with the JVM Attach API:
+
+```rust,ignore
+use jvmti_bindings::prelude::*;
+
+#[derive(Default)]
+struct AttachLogger;
+
+impl Agent for AttachLogger {
+    fn on_attach(&self, vm: *mut jni::JavaVM, options: &str) -> jni::jint {
+        println!("[AttachLogger] attached with options: {}", options);
+        let _jvmti = Jvmti::new(vm).expect("get JVMTI");
+        jni::JNI_OK
+    }
+}
+
+export_agent!(AttachLogger);
+```
+
 ## Class File Parsing
 
 This crate now includes a zero-dependency class file parser that understands all standard attributes from Java 8 through Java 27. Use it inside `ClassFileLoadHook` to inspect or transform class metadata.
