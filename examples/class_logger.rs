@@ -48,39 +48,29 @@ impl Agent for ClassLogger {
             }
         };
 
-        // Request capabilities
-        let mut caps = jvmti::jvmtiCapabilities::default();
-        caps.set_can_generate_all_class_hook_events(true);
-        caps.set_can_retransform_classes(true);
-
-        if let Err(e) = jvmti_env.add_capabilities(&caps) {
+        // Request capabilities. This example also asks for retransform support.
+        if let Err(e) = jvmti_env.add_capabilities_with(|caps| {
+            caps.set_can_generate_all_class_hook_events(true);
+            caps.set_can_retransform_classes(true);
+        }) {
             eprintln!("[ClassLogger] Failed to add capabilities: {:?}", e);
             return jni::JNI_ERR;
         }
 
         // Set up callbacks
-        let callbacks = get_default_callbacks();
-        if let Err(e) = jvmti_env.set_event_callbacks(callbacks) {
+        if let Err(e) = jvmti_env.set_default_agent_callbacks() {
             eprintln!("[ClassLogger] Failed to set callbacks: {:?}", e);
             return jni::JNI_ERR;
         }
 
         // Enable class file load hook
-        if let Err(e) = jvmti_env.set_event_notification_mode(
-            true, // enable
-            jvmti::JVMTI_EVENT_CLASS_FILE_LOAD_HOOK,
-            std::ptr::null_mut(),
-        ) {
+        if let Err(e) = jvmti_env.enable_class_file_load_hook_events() {
             eprintln!("[ClassLogger] Failed to enable class hook: {:?}", e);
             return jni::JNI_ERR;
         }
 
         // Enable VM death for summary
-        let _ = jvmti_env.set_event_notification_mode(
-            true, // enable
-            jvmti::JVMTI_EVENT_VM_DEATH,
-            std::ptr::null_mut(),
-        );
+        let _ = jvmti_env.enable_event(jvmti::JVMTI_EVENT_VM_DEATH, std::ptr::null_mut());
 
         println!("[ClassLogger] Ready to log class loads");
         jni::JNI_OK

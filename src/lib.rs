@@ -208,6 +208,13 @@ use std::sync::OnceLock;
 pub use crate::sys::jni as jni;
 use crate::sys::jvmti as jvmti;
 
+/// Return a display-ready JNI result string, e.g. `JNI_EDETACHED (-2)`.
+///
+/// This is a convenience wrapper around [`jni::describe_result`].
+pub fn describe_jni_result(code: jni::jint) -> String {
+    jni::describe_result(code)
+}
+
 /// The core trait for implementing a JVMTI agent.
 ///
 /// Implement this trait and use [`export_agent!`] to create a loadable agent library.

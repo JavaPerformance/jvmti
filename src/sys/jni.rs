@@ -114,6 +114,11 @@ pub const fn result_name(code: jint) -> &'static str {
     }
 }
 
+/// Return a display-ready JNI result string, e.g. `JNI_EDETACHED (-2)`.
+pub fn describe_result(code: jint) -> String {
+    format!("{} ({})", result_name(code), code)
+}
+
 pub const JNI_TRUE: jboolean = 1;
 pub const JNI_FALSE: jboolean = 0;
 

@@ -52,69 +52,28 @@ impl Agent for MethodCounter {
             }
         };
 
-        // Request capabilities for method entry/exit events
-        let mut caps = jvmti::jvmtiCapabilities::default();
-        caps.set_can_generate_method_entry_events(true);
-        caps.set_can_generate_method_exit_events(true);
-
-        if let Err(e) = jvmti_env.add_capabilities(&caps) {
-            eprintln!("[MethodCounter] Failed to add capabilities: {:?}", e);
-            return jni::JNI_ERR;
-        }
-
-        // Set up event callbacks
-        let callbacks = get_default_callbacks();
-        if let Err(e) = jvmti_env.set_event_callbacks(callbacks) {
-            eprintln!("[MethodCounter] Failed to set callbacks: {:?}", e);
-            return jni::JNI_ERR;
-        }
-
-        // Enable method entry/exit events
-        // Note: Enabling these for all threads has significant overhead!
-        if let Err(e) = jvmti_env.set_event_notification_mode(
-            true, // enable
-            jvmti::JVMTI_EVENT_METHOD_ENTRY,
-            std::ptr::null_mut(),
-        ) {
-            eprintln!("[MethodCounter] Failed to enable method entry: {:?}", e);
-            return jni::JNI_ERR;
-        }
-
-        if let Err(e) = jvmti_env.set_event_notification_mode(
-            true, // enable
-            jvmti::JVMTI_EVENT_METHOD_EXIT,
-            std::ptr::null_mut(),
-        ) {
-            eprintln!("[MethodCounter] Failed to enable method exit: {:?}", e);
+        // Request capabilities, wire callbacks, and enable method entry/exit.
+        // Note: Enabling these for all threads has significant overhead.
+        if let Err(e) = jvmti_env.configure_method_trace_agent() {
+            eprintln!(
+                "[MethodCounter] Failed to configure method tracing: {:?}",
+                e
+            );
             return jni::JNI_ERR;
         }
 
         // Also enable VM death so we can print summary
-        let _ = jvmti_env.set_event_notification_mode(
-            true, // enable
-            jvmti::JVMTI_EVENT_VM_DEATH,
-            std::ptr::null_mut(),
-        );
+        let _ = jvmti_env.enable_event(jvmti::JVMTI_EVENT_VM_DEATH, std::ptr::null_mut());
 
         println!("[MethodCounter] Agent ready, counting methods...");
         jni::JNI_OK
     }
 
-    fn method_entry(
-        &self,
-        _jni: *mut jni::JNIEnv,
-        _thread: jni::jthread,
-        _method: jni::jmethodID,
-    ) {
+    fn method_entry(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread, _method: jni::jmethodID) {
         self.method_entries.fetch_add(1, Ordering::Relaxed);
     }
 
-    fn method_exit(
-        &self,
-        _jni: *mut jni::JNIEnv,
-        _thread: jni::jthread,
-        _method: jni::jmethodID,
-    ) {
+    fn method_exit(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread, _method: jni::jmethodID) {
         self.method_exits.fetch_add(1, Ordering::Relaxed);
     }
 

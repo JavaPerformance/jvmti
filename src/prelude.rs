@@ -3,6 +3,7 @@
 //! This prelude is intentionally small. It covers the types and helpers most
 //! agents use while avoiding over-broad re-exports.
 
+pub use crate::describe_jni_result;
 #[cfg(feature = "embed")]
 pub use crate::embed::{find_libjvm, find_libjvm_verbose, AttachedThread, JavaVm, JavaVmBuilder};
 pub use crate::env::{GlobalRef, JniEnv, Jvmti, LocalRef};

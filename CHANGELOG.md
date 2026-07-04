@@ -10,9 +10,12 @@
    - `JavaVm::with_attached_current_thread`
    - `JavaVm::with_attached_current_thread_as_daemon`
    - `AttachedThread`
-2. `Default` for `JavaVmBuilder`, using the Java 8 JNI baseline.
-3. `jni::result_name` for human-readable JNI status/result codes.
-4. API tests for null `JavaVM` handling and embedding helper surface.
+2. Common JVMTI workflow helpers for class-file hooks, method tracing, exception tracing, heap sampling, and default callback wiring.
+3. Capability preset builders on `jvmtiCapabilities`.
+4. `Default` for `JavaVmBuilder`, using the Java 8 JNI baseline.
+5. `jni::result_name`, `jni::describe_result`, `jvmti::error_name`, and top-level `describe_jni_result` diagnostics.
+6. `Jvmti::get_error_name_string` for JVM-provided JVMTI error names.
+7. API tests for null `JavaVM` handling, diagnostics, workflow helpers, capability presets, and embedding helper surface.
 
 ### Fixed
 1. `Jvmti::new` now rejects null `JavaVM` pointers instead of dereferencing them.

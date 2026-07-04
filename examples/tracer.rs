@@ -20,21 +20,8 @@ impl Agent for ClassTracer {
             }
         };
 
-        if let Err(e) = jvmti.add_capabilities_with(|caps| {
-            caps.set_can_generate_all_class_hook_events(true);
-        }) {
-            eprintln!("[tracer] Failed to add capabilities: {:?}", e);
-            return jni::JNI_ERR;
-        }
-
-        let callbacks = get_default_callbacks();
-        if let Err(e) = jvmti.set_event_callbacks(callbacks) {
-            eprintln!("[tracer] Failed to set callbacks: {:?}", e);
-            return jni::JNI_ERR;
-        }
-
-        if let Err(e) = jvmti.enable_events_global(&[jvmti::JVMTI_EVENT_CLASS_FILE_LOAD_HOOK]) {
-            eprintln!("[tracer] Failed to enable events: {:?}", e);
+        if let Err(e) = jvmti.configure_class_file_load_hook_agent() {
+            eprintln!("[tracer] Failed to configure class hook: {:?}", e);
             return jni::JNI_ERR;
         }
 

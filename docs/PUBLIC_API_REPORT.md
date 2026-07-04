@@ -10,7 +10,8 @@ This report summarizes the intended public surface of `jvmti-bindings`.
 2. `export_agent!` macro
 3. `get_default_callbacks`
 4. `jni` re-export (`crate::sys::jni`)
-5. Modules: `env`, `sys`, `classfile`, `prelude`, `embed` (feature-gated), `advanced` (feature-gated)
+5. `describe_jni_result`
+6. Modules: `env`, `sys`, `classfile`, `prelude`, `embed` (feature-gated), `advanced` (feature-gated)
 
 ## `env` Module
 
@@ -28,10 +29,30 @@ Public types:
 11. `ExtensionEventInfo`
 12. `LocalVariableEntry`
 
+Common `Jvmti` helper methods:
+1. `set_default_agent_callbacks`
+2. `add_class_file_load_hook_capabilities`
+3. `add_method_trace_capabilities`
+4. `add_exception_capabilities`
+5. `add_heap_sampling_capabilities`
+6. `enable_class_file_load_hook_events`
+7. `enable_method_entry_exit_events`
+8. `enable_exception_events`
+9. `enable_heap_sampling_events`
+10. `enable_vm_lifecycle_events`
+11. `configure_class_file_load_hook_agent`
+12. `configure_method_trace_agent`
+13. `configure_exception_agent`
+14. `configure_heap_sampling_agent`
+15. `get_error_name_string`
+
 ## `sys` Module
 
 1. `sys::jni` - Raw JNI types, constants, and function tables.
 2. `sys::jvmti` - Raw JVMTI types, constants, and function tables.
+3. Diagnostics: `jni::result_name`, `jni::describe_result`, `jvmti::error_name`.
+4. Capability presets: `jvmtiCapabilities::for_class_file_load_hook`, `for_method_trace`,
+   `for_exceptions`, `for_heap_sampling`.
 
 Note: `sys` mirrors JNI/JVMTI headers and may grow with new JDK versions.
 

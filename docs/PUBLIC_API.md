@@ -15,7 +15,15 @@ Public items:
 2. `export_agent!` macro
 3. `get_default_callbacks` helper
 4. `jni` re-export (`crate::sys::jni`)
-5. `embed::{JavaVmBuilder, JavaVm, AttachedThread}` when the `embed` feature is enabled
+5. `describe_jni_result` helper
+6. `embed::{JavaVmBuilder, JavaVm, AttachedThread}` when the `embed` feature is enabled
+
+Common high-level helpers:
+1. `Jvmti::set_default_agent_callbacks`
+2. `Jvmti::add_*_capabilities` presets for class hooks, method tracing, exceptions, and heap sampling
+3. `Jvmti::enable_*_events` presets for common event groups
+4. `Jvmti::configure_*_agent` presets for common agent workflows
+5. `jni::result_name`, `jni::describe_result`, and `jvmti::error_name` diagnostics
 
 Stability notes:
 1. `sys` follows the JVMTI/JNI C headers and may grow with new JDK versions.

@@ -96,6 +96,21 @@ pub enum jvmtiError {
     // ...
 }
 
+/// Return the standard JVMTI error constant name.
+pub const fn error_name(error: jvmtiError) -> &'static str {
+    match error {
+        jvmtiError::NONE => "JVMTI_ERROR_NONE",
+        jvmtiError::INVALID_THREAD => "JVMTI_ERROR_INVALID_THREAD",
+        jvmtiError::INVALID_CLASS => "JVMTI_ERROR_INVALID_CLASS",
+        jvmtiError::NOT_AVAILABLE => "JVMTI_ERROR_NOT_AVAILABLE",
+        jvmtiError::MUST_POSSESS_CAPABILITY => "JVMTI_ERROR_MUST_POSSESS_CAPABILITY",
+        jvmtiError::NULL_POINTER => "JVMTI_ERROR_NULL_POINTER",
+        jvmtiError::ABSENT_INFORMATION => "JVMTI_ERROR_ABSENT_INFORMATION",
+        jvmtiError::INVALID_EVENT_TYPE => "JVMTI_ERROR_INVALID_EVENT_TYPE",
+        jvmtiError::ILLEGAL_ARGUMENT => "JVMTI_ERROR_ILLEGAL_ARGUMENT",
+    }
+}
+
 pub type jlocation = jlong;
 pub type jrawMonitorID = *mut c_void;
 
@@ -333,6 +348,35 @@ impl jvmtiCapabilities {
         let word_index = bit_offset / 32;
         let bit_index = bit_offset % 32;
         (self.bits[word_index] & (1 << bit_index)) != 0
+    }
+
+    /// Capabilities required for `ClassFileLoadHook`.
+    pub fn for_class_file_load_hook() -> Self {
+        let mut caps = Self::default();
+        caps.set_can_generate_all_class_hook_events(true);
+        caps
+    }
+
+    /// Capabilities required for method-entry and method-exit tracing.
+    pub fn for_method_trace() -> Self {
+        let mut caps = Self::default();
+        caps.set_can_generate_method_entry_events(true);
+        caps.set_can_generate_method_exit_events(true);
+        caps
+    }
+
+    /// Capabilities required for exception and exception-catch events.
+    pub fn for_exceptions() -> Self {
+        let mut caps = Self::default();
+        caps.set_can_generate_exception_events(true);
+        caps
+    }
+
+    /// Capabilities required for sampled-object-allocation events.
+    pub fn for_heap_sampling() -> Self {
+        let mut caps = Self::default();
+        caps.set_can_generate_sampled_object_alloc_events(true);
+        caps
     }
 
     // =========================================================================

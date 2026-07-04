@@ -185,6 +185,34 @@ impl Jvmti {
         self.add_capabilities(&caps)?;
         Ok(caps)
     }
+
+    /// Request the capabilities required for `ClassFileLoadHook`.
+    pub fn add_class_file_load_hook_capabilities(&self) -> Result<jvmti::jvmtiCapabilities, jvmti::jvmtiError> {
+        let caps = jvmti::jvmtiCapabilities::for_class_file_load_hook();
+        self.add_capabilities(&caps)?;
+        Ok(caps)
+    }
+
+    /// Request the capabilities required for method-entry and method-exit tracing.
+    pub fn add_method_trace_capabilities(&self) -> Result<jvmti::jvmtiCapabilities, jvmti::jvmtiError> {
+        let caps = jvmti::jvmtiCapabilities::for_method_trace();
+        self.add_capabilities(&caps)?;
+        Ok(caps)
+    }
+
+    /// Request the capabilities required for exception and exception-catch events.
+    pub fn add_exception_capabilities(&self) -> Result<jvmti::jvmtiCapabilities, jvmti::jvmtiError> {
+        let caps = jvmti::jvmtiCapabilities::for_exceptions();
+        self.add_capabilities(&caps)?;
+        Ok(caps)
+    }
+
+    /// Request the capabilities required for sampled-object-allocation events.
+    pub fn add_heap_sampling_capabilities(&self) -> Result<jvmti::jvmtiCapabilities, jvmti::jvmtiError> {
+        let caps = jvmti::jvmtiCapabilities::for_heap_sampling();
+        self.add_capabilities(&caps)?;
+        Ok(caps)
+    }
     
     pub fn set_event_callbacks(&self, callbacks: jvmti::jvmtiEventCallbacks) -> Result<(), jvmti::jvmtiError> {
         unsafe {
@@ -199,6 +227,10 @@ impl Jvmti {
         Ok(())
     }
 
+    /// Wire the default Rust agent trampolines from [`crate::get_default_callbacks`].
+    pub fn set_default_agent_callbacks(&self) -> Result<(), jvmti::jvmtiError> {
+        self.set_event_callbacks(crate::get_default_callbacks())
+    }
 
     pub fn set_event_notification_mode(&self, enable: bool, event_type: u32, thread: jni::jthread) -> Result<(), jvmti::jvmtiError> {
         unsafe {
@@ -239,6 +271,81 @@ impl Jvmti {
             self.disable_event(event_type, ptr::null_mut())?;
         }
         Ok(())
+    }
+
+    /// Enable `ClassFileLoadHook` for all threads.
+    pub fn enable_class_file_load_hook_events(&self) -> Result<(), jvmti::jvmtiError> {
+        self.enable_events_global(&[jvmti::JVMTI_EVENT_CLASS_FILE_LOAD_HOOK])
+    }
+
+    /// Enable method-entry and method-exit events for all threads.
+    pub fn enable_method_entry_exit_events(&self) -> Result<(), jvmti::jvmtiError> {
+        self.enable_events_global(&[
+            jvmti::JVMTI_EVENT_METHOD_ENTRY,
+            jvmti::JVMTI_EVENT_METHOD_EXIT,
+        ])
+    }
+
+    /// Enable exception and exception-catch events for all threads.
+    pub fn enable_exception_events(&self) -> Result<(), jvmti::jvmtiError> {
+        self.enable_events_global(&[
+            jvmti::JVMTI_EVENT_EXCEPTION,
+            jvmti::JVMTI_EVENT_EXCEPTION_CATCH,
+        ])
+    }
+
+    /// Enable sampled-object-allocation events for all threads.
+    pub fn enable_heap_sampling_events(&self) -> Result<(), jvmti::jvmtiError> {
+        self.enable_events_global(&[jvmti::JVMTI_EVENT_SAMPLED_OBJECT_ALLOC])
+    }
+
+    /// Enable VM init and VM death events for all threads.
+    pub fn enable_vm_lifecycle_events(&self) -> Result<(), jvmti::jvmtiError> {
+        self.enable_events_global(&[
+            jvmti::JVMTI_EVENT_VM_INIT,
+            jvmti::JVMTI_EVENT_VM_DEATH,
+        ])
+    }
+
+    /// Configure a standard class-file-load-hook agent.
+    ///
+    /// This requests the required capability, wires default callbacks, and
+    /// enables `ClassFileLoadHook` globally.
+    pub fn configure_class_file_load_hook_agent(&self) -> Result<(), jvmti::jvmtiError> {
+        self.add_class_file_load_hook_capabilities()?;
+        self.set_default_agent_callbacks()?;
+        self.enable_class_file_load_hook_events()
+    }
+
+    /// Configure a standard method-entry/method-exit tracing agent.
+    ///
+    /// This requests the required capabilities, wires default callbacks, and
+    /// enables method entry and method exit globally.
+    pub fn configure_method_trace_agent(&self) -> Result<(), jvmti::jvmtiError> {
+        self.add_method_trace_capabilities()?;
+        self.set_default_agent_callbacks()?;
+        self.enable_method_entry_exit_events()
+    }
+
+    /// Configure a standard exception tracing agent.
+    ///
+    /// This requests the required capability, wires default callbacks, and
+    /// enables exception and exception-catch events globally.
+    pub fn configure_exception_agent(&self) -> Result<(), jvmti::jvmtiError> {
+        self.add_exception_capabilities()?;
+        self.set_default_agent_callbacks()?;
+        self.enable_exception_events()
+    }
+
+    /// Configure a standard sampled heap allocation agent.
+    ///
+    /// This requests the required capability, wires default callbacks, and
+    /// enables sampled-object-allocation events globally. Use
+    /// [`Jvmti::set_heap_sampling_interval`] separately to tune the sample rate.
+    pub fn configure_heap_sampling_agent(&self) -> Result<(), jvmti::jvmtiError> {
+        self.add_heap_sampling_capabilities()?;
+        self.set_default_agent_callbacks()?;
+        self.enable_heap_sampling_events()
     }
 
     pub fn get_all_modules(&self) -> Result<Vec<jni::jobject>, jvmti::jvmtiError> {
@@ -1824,15 +1931,22 @@ impl Jvmti {
             let get_fn = (*(*self.env).functions).GetErrorName.unwrap();
             let err = get_fn(self.env, error, &mut name_ptr);
             if err != jvmti::jvmtiError::NONE { return Err(err); }
+            if name_ptr.is_null() { return Err(jvmti::jvmtiError::NULL_POINTER); }
             let name = std::ffi::CStr::from_ptr(name_ptr).to_string_lossy().into_owned();
             self.deallocate(name_ptr as *mut u8)?;
             Ok(name)
         }
     }
 
+    /// Return the JVM-provided JVMTI error name as an owned string.
+    pub fn get_error_name_string(&self, error: jvmti::jvmtiError) -> Result<String, jvmti::jvmtiError> {
+        self.get_error_name(error)
+    }
+
     /// Best-effort conversion of a JVMTI error to a readable string.
     pub fn error_to_string(&self, error: jvmti::jvmtiError) -> String {
-        self.get_error_name(error).unwrap_or_else(|_| format!("{error:?}"))
+        self.get_error_name_string(error)
+            .unwrap_or_else(|_| jvmti::error_name(error).to_string())
     }
 
     pub fn get_jlocation_format(&self) -> Result<jni::jint, jvmti::jvmtiError> {

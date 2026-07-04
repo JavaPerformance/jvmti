@@ -23,22 +23,19 @@ impl Agent for HeapSampler {
             }
         };
 
-        if let Err(e) = jvmti.add_capabilities_with(|caps| {
-            caps.set_can_generate_sampled_object_alloc_events(true);
-        }) {
+        if let Err(e) = jvmti.add_heap_sampling_capabilities() {
             eprintln!("[heap] Failed to add capabilities: {:?}", e);
             return jni::JNI_ERR;
         }
 
-        let callbacks = get_default_callbacks();
-        if let Err(e) = jvmti.set_event_callbacks(callbacks) {
+        if let Err(e) = jvmti.set_default_agent_callbacks() {
             eprintln!("[heap] Failed to set callbacks: {:?}", e);
             return jni::JNI_ERR;
         }
 
         let _ = jvmti.set_heap_sampling_interval(1024 * 1024);
 
-        if let Err(e) = jvmti.enable_events_global(&[jvmti::JVMTI_EVENT_SAMPLED_OBJECT_ALLOC]) {
+        if let Err(e) = jvmti.enable_heap_sampling_events() {
             eprintln!("[heap] Failed to enable events: {:?}", e);
             return jni::JNI_ERR;
         }

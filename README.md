@@ -393,23 +393,27 @@ use jvmti_bindings::prelude::*;
 fn on_load(&self, vm: *mut jni::JavaVM, _options: &str) -> jni::jint {
     let jvmti_env = Jvmti::new(vm).expect("Failed to get JVMTI");
 
-    // 1. Request capabilities (must happen in on_load)
-    let mut caps = jvmti::jvmtiCapabilities::default();
-    caps.set_can_generate_all_class_hook_events(true);
-    jvmti_env.add_capabilities(&caps).expect("capabilities");
-
-    // 2. Wire callbacks to your Agent impl
-    let callbacks = get_default_callbacks();
-    jvmti_env.set_event_callbacks(callbacks).expect("callbacks");
-
-    // 3. Enable specific events
-    jvmti_env.enable_event(
-        jvmti::JVMTI_EVENT_CLASS_FILE_LOAD_HOOK,
-        std::ptr::null_mut(),
-    ).expect("enable");
+    // Requests capabilities, wires callbacks, and enables ClassFileLoadHook.
+    jvmti_env.configure_class_file_load_hook_agent().expect("configure");
 
     jni::JNI_OK
 }
+```
+
+Lower-level helpers are available when you need explicit control:
+
+```rust
+let caps = jvmti::jvmtiCapabilities::for_method_trace();
+jvmti_env.add_capabilities(&caps)?;
+jvmti_env.set_default_agent_callbacks()?;
+jvmti_env.enable_method_entry_exit_events()?;
+```
+
+For diagnostics:
+
+```rust
+eprintln!("jni={}", describe_jni_result(jni::JNI_EDETACHED));
+eprintln!("jvmti={}", jvmti::error_name(jvmti::jvmtiError::MUST_POSSESS_CAPABILITY));
 ```
 
 ## Capabilities Reference

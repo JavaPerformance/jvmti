@@ -30,13 +30,12 @@ impl Agent for MethodProfiler {
             return jni::JNI_ERR;
         }
 
-        let callbacks = get_default_callbacks();
-        if let Err(e) = jvmti.set_event_callbacks(callbacks) {
+        if let Err(e) = jvmti.set_default_agent_callbacks() {
             eprintln!("[profiler] Failed to set callbacks: {:?}", e);
             return jni::JNI_ERR;
         }
 
-        if let Err(e) = jvmti.enable_events_global(&[jvmti::JVMTI_EVENT_METHOD_ENTRY]) {
+        if let Err(e) = jvmti.enable_event(jvmti::JVMTI_EVENT_METHOD_ENTRY, std::ptr::null_mut()) {
             eprintln!("[profiler] Failed to enable events: {:?}", e);
             return jni::JNI_ERR;
         }
