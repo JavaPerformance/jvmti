@@ -1,6 +1,6 @@
 //! # jvmti
 //!
-//! Complete JNI and JVMTI bindings for Rust with **zero dependencies**.
+//! Complete JNI and JVMTI bindings for Rust with **zero dependencies by default**.
 //!
 //! This crate provides everything you need to build JVM agents in Rust:
 //! - Low-level FFI bindings to JNI and JVMTI
@@ -10,7 +10,7 @@
 //! ## Features
 //!
 //! - **Complete Coverage**: All 236 JNI functions, all 156 JVMTI functions
-//! - **Zero Dependencies**: No external crates required
+//! - **Zero Dependencies By Default**: Optional helpers are feature-gated
 //! - **Ergonomic API**: High-level wrappers handle strings, arrays, references
 //! - **Type-Safe**: Proper Rust types, `Result` returns, RAII guards
 //! - **JDK 8-27 Compatible**: Verified against JDK 27 headers
@@ -30,7 +30,7 @@
 //! crate-type = ["cdylib"]
 //!
 //! [dependencies]
-//! jvmti = "0.1"
+//! jvmti-bindings = "2"
 //! ```
 //!
 //! **3. Implement your agent (src/lib.rs):**
@@ -98,6 +98,7 @@
 //! | [`env::JniEnv`] | JNI environment wrapper (60+ methods) |
 //! | [`classfile`] | Class file parser with all Java 8-27 attributes |
 //! | [`prelude`] | Recommended imports for agents |
+//! | [`embed`] | Optional JVM embedding helpers (`embed` feature) |
 //! | [`advanced`] | Feature-gated advanced helpers (heap graph utilities) |
 //!
 //! ## Enabling JVMTI Events

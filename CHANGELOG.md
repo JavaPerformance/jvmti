@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.2.0
+
+### Added
+1. Safer JVM embedding thread helpers:
+   - `JavaVm::attach_current_thread_guard`
+   - `JavaVm::attach_current_thread_as_daemon`
+   - `JavaVm::attach_current_thread_as_daemon_guard`
+   - `JavaVm::with_attached_current_thread`
+   - `JavaVm::with_attached_current_thread_as_daemon`
+   - `AttachedThread`
+2. `Default` for `JavaVmBuilder`, using the Java 8 JNI baseline.
+3. `jni::result_name` for human-readable JNI status/result codes.
+4. API tests for null `JavaVM` handling and embedding helper surface.
+
+### Fixed
+1. `Jvmti::new` now rejects null `JavaVM` pointers instead of dereferencing them.
+2. Embedding error messages now include JNI status names.
+3. Documentation and crate metadata now say "zero dependencies by default" instead of implying optional features have no dependencies.
+4. Versioning and API-stability docs now describe the current 2.x SemVer policy.
+5. README no longer implies dynamic attach is unsupported.
+
 ## 2.1.0
 
 ### Added

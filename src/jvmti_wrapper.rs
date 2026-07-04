@@ -96,9 +96,17 @@ pub struct Jvmti {
 impl Jvmti {
     /// Connects to the JVM and retrieves the JVMTI environment.
     pub fn new(vm: *mut jni::JavaVM) -> Result<Self, jni::jint> {
+        if vm.is_null() {
+            return Err(jni::JNI_ERR);
+        }
+
         let mut env_ptr: *mut std::ffi::c_void = ptr::null_mut();
 
         unsafe {
+            if (*vm).is_null() {
+                return Err(jni::JNI_ERR);
+            }
+
             // Access GetEnv directly from the vtable
             // vm: *mut JavaVM = *mut *const JNIInvokeInterface_
             // *vm: *const JNIInvokeInterface_ (vtable pointer)
@@ -110,6 +118,10 @@ impl Jvmti {
             if res != jni::JNI_OK {
                 return Err(res);
             }
+        }
+
+        if env_ptr.is_null() {
+            return Err(jni::JNI_ERR);
         }
 
         Ok(Jvmti {

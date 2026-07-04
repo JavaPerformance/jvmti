@@ -17,7 +17,7 @@ jvmti-bindings = { version = "2", features = ["embed"] }
 use jvmti_bindings::prelude::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let builder = JavaVmBuilder::new(jni::JNI_VERSION_1_8)
+    let builder = JavaVmBuilder::default()
         .option("-Xms64m")?
         .option("-Xmx256m")?
         .option("-Djava.class.path=./myapp.jar")?;
@@ -26,15 +26,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let vm = builder.create()?;
 
     // Only valid on the creating thread:
-let env = unsafe { vm.creator_env() };
-let system = env.find_class("java/lang/System").unwrap();
-let get_prop = env
-    .get_static_method_id(system, "getProperty", "(Ljava/lang/String;)Ljava/lang/String;")
-    .unwrap();
-let key = env.new_string_utf("java.version").unwrap();
-let value = env.call_static_object_method(system, get_prop, &[jni::jvalue { l: key }]);
-let version = env.get_string_utf(value).unwrap_or_else(|| "<unknown>".to_string());
-println!("java.version={}", version);
+    let env = unsafe { vm.creator_env() };
+    let system = env.find_class("java/lang/System").unwrap();
+    let get_prop = env
+        .get_static_method_id(system, "getProperty", "(Ljava/lang/String;)Ljava/lang/String;")
+        .unwrap();
+    let key = env.new_string_utf("java.version").unwrap();
+    let value = env.call_static_object_method(system, get_prop, &[jni::jvalue { l: key }]);
+    let version = env.get_string_utf(value).unwrap_or_else(|| "<unknown>".to_string());
+    println!("java.version={}", version);
 
     vm.destroy()?;
     Ok(())
@@ -44,8 +44,28 @@ println!("java.version={}", version);
 ## Thread Rules
 
 - `creator_env()` is **only valid on the thread that created the JVM**.
-- For any other thread, use `attach_current_thread()` and call
-  `detach_current_thread()` when you are done.
+- For native worker threads, prefer `attach_current_thread_guard()` or
+  `with_attached_current_thread()`; they detach only if they attached the
+  thread themselves.
+- Use `attach_current_thread()` / `detach_current_thread()` directly only when
+  you need explicit lifecycle control.
+
+```rust,ignore
+let answer = vm.with_attached_current_thread(|env| {
+    let cls = env.find_class("java/lang/Integer").unwrap();
+    let method = env
+        .get_static_method_id(cls, "toString", "(I)Ljava/lang/String;")
+        .unwrap();
+    let value = env.call_static_object_method(
+        cls,
+        method,
+        &[jni::jvalue { i: 42 }],
+    );
+    env.get_string_utf(value).unwrap()
+})?;
+
+assert_eq!(answer, "42");
+```
 
 ## Discovery
 

@@ -10,7 +10,7 @@ This report summarizes the intended public surface of `jvmti-bindings`.
 2. `export_agent!` macro
 3. `get_default_callbacks`
 4. `jni` re-export (`crate::sys::jni`)
-5. Modules: `env`, `sys`, `classfile`, `prelude`, `advanced` (feature-gated)
+5. Modules: `env`, `sys`, `classfile`, `prelude`, `embed` (feature-gated), `advanced` (feature-gated)
 
 ## `env` Module
 
@@ -46,6 +46,17 @@ Recommended imports for agent authors:
 1. `Agent`, `export_agent!`, `get_default_callbacks`
 2. `env::{Jvmti, JniEnv, LocalRef, GlobalRef}`
 3. `sys::{jni, jvmti}`
+4. `embed::{JavaVmBuilder, JavaVm, AttachedThread}` when the `embed` feature is enabled
+
+## `embed` Module
+
+Feature-gated JVM embedding helpers (`embed` feature):
+1. `JavaVmBuilder`
+2. `JavaVm`
+3. `AttachedThread`
+4. `find_libjvm`
+5. `find_libjvm_verbose`
+6. `EmbedError`
 
 ## `advanced` Module
 

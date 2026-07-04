@@ -1,14 +1,14 @@
 # API Stability Checklist
 
-This checklist defines the stability expectations before 1.0 and the criteria for API changes.
+This checklist defines the stability expectations for 2.x releases and the criteria for API changes.
 
-## Pre-1.0 Stability Rules
+## 2.x Stability Rules
 
-1. Avoid breaking changes unless critical for safety or correctness.
-2. Deprecate before removal where possible.
+1. Preserve documented public APIs within the 2.x line.
+2. Deprecate before removal where possible; removals require a major release.
 3. Keep `env` APIs stable and ergonomic.
 4. Keep `sys` in sync with upstream JNI/JVMTI headers.
-5. Feature-gated modules (`advanced`) may change faster, but must document changes.
+5. Feature-gated modules may grow faster, but must document behavior changes.
 
 ## Review Checklist for Any Public API Change
 
@@ -18,7 +18,7 @@ This checklist defines the stability expectations before 1.0 and the criteria fo
 4. Are safety assumptions updated?
 5. Are tests updated or added?
 
-## 1.0 Readiness Gates
+## Minor Release Gates
 
 1. Public surface area is documented and intentional.
 2. Unsafe boundaries are minimal and clearly documented.
@@ -26,3 +26,4 @@ This checklist defines the stability expectations before 1.0 and the criteria fo
 4. All JVMTI allocations have explicit ownership.
 5. Examples cover core workflows (profiling, tracing, heap sampling).
 6. CI green on Linux/macOS/Windows.
+7. `cargo publish --dry-run` succeeds.

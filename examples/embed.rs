@@ -6,11 +6,11 @@
 
 use std::error::Error;
 
-use jvmti_bindings::prelude::*;
 use jvmti_bindings::embed::find_libjvm_verbose;
+use jvmti_bindings::prelude::*;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let builder = JavaVmBuilder::new(jni::JNI_VERSION_1_8)
+    let builder = JavaVmBuilder::default()
         .option("-Xms64m")?
         .option("-Xmx256m")?
         .option("-Djava.class.path=./myapp.jar")?;
@@ -21,7 +21,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     let env = unsafe { vm.creator_env() };
     let system = env.find_class("java/lang/System").unwrap();
     let get_prop = env
-        .get_static_method_id(system, "getProperty", "(Ljava/lang/String;)Ljava/lang/String;")
+        .get_static_method_id(
+            system,
+            "getProperty",
+            "(Ljava/lang/String;)Ljava/lang/String;",
+        )
         .unwrap();
 
     let key = env.new_string_utf("java.version").unwrap();
@@ -31,14 +35,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         env.exception_describe();
         env.exception_clear();
     } else {
-        let version = env.get_string_utf(value).unwrap_or_else(|| "<unknown>".to_string());
+        let version = env
+            .get_string_utf(value)
+            .unwrap_or_else(|| "<unknown>".to_string());
         println!("java.version={}", version);
     }
 
     if let Err(code) = vm.destroy() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::Other,
-            format!("DestroyJavaVM failed: {code}"),
+            format!("DestroyJavaVM failed: {} ({code})", jni::result_name(code)),
         )
         .into());
     }

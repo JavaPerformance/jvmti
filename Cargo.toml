@@ -1,14 +1,14 @@
 # jvmti - Complete JNI/JVMTI bindings for Rust
 #
-# Zero dependencies. Verified against JDK 27. Compatible with JDK 8+.
+# Zero dependencies by default. Verified against JDK 27. Compatible with JDK 8+.
 
 [package]
 name = "jvmti-bindings"
-version = "2.1.0"
+version = "2.2.0"
 edition = "2021"
 rust-version = "1.70"
 
-description = "Complete JNI and JVMTI bindings for Rust with zero dependencies. Build JVM agents in pure Rust."
+description = "Complete JNI and JVMTI bindings for Rust with zero dependencies by default. Build JVM agents in pure Rust."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/JavaPerformance/jvmti"
 documentation = "https://docs.rs/jvmti-bindings"
@@ -17,7 +17,8 @@ keywords = ["jvm", "jni", "jvmti", "java", "agent"]
 categories = ["api-bindings", "development-tools::profiling", "external-ffi-bindings"]
 
 [dependencies]
-# No external dependencies by default - all JNI/JVMTI bindings are internal
+# No external dependencies by default - all JNI/JVMTI bindings are internal.
+# Optional features enable helper dependencies for embedding and benchmark tools.
 zip = { version = "0.6", optional = true }
 libloading = { version = "0.8", optional = true }
 
@@ -46,7 +47,7 @@ all-features = true
 #   crate-type = ["cdylib"]
 #
 #   [dependencies]
-#   jvmti = "0.1"
+#   jvmti-bindings = "2"
 
 [[example]]
 name = "minimal"

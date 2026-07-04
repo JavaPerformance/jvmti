@@ -24,7 +24,7 @@ impl std::fmt::Display for EmbedError {
         match self {
             EmbedError::Nul(e) => write!(f, "invalid option (NUL byte): {e}"),
             EmbedError::Load(e) => write!(f, "failed to load libjvm: {e}"),
-            EmbedError::Jni(code) => write!(f, "JNI error: {code}"),
+            EmbedError::Jni(code) => write!(f, "JNI error {} ({code})", jni::result_name(*code)),
             EmbedError::Locate(msg) => write!(f, "{msg}"),
         }
     }
@@ -118,12 +118,10 @@ pub fn find_libjvm() -> Result<PathBuf, EmbedError> {
         )));
     }
 
-    Err(EmbedError::Locate(
-        format!(
-            "JAVA_HOME is not set. Set JAVA_HOME or JVM_LIB_PATH to locate libjvm. {}",
-            platform_hint()
-        ),
-    ))
+    Err(EmbedError::Locate(format!(
+        "JAVA_HOME is not set. Set JAVA_HOME or JVM_LIB_PATH to locate libjvm. {}",
+        platform_hint()
+    )))
 }
 
 /// Like `find_libjvm`, but prints the discovered path to stderr.
@@ -138,6 +136,13 @@ pub struct JavaVmBuilder {
     version: jni::jint,
     options: Vec<CString>,
     ignore_unrecognized: bool,
+}
+
+impl Default for JavaVmBuilder {
+    /// Create a builder using the Java 8 JNI baseline version.
+    fn default() -> Self {
+        Self::new(jni::JNI_VERSION_1_8)
+    }
 }
 
 impl JavaVmBuilder {
@@ -229,8 +234,7 @@ impl JavaVmBuilder {
     /// Create a JVM by dynamically loading `libjvm` from the given path.
     pub fn create_from_library<P: AsRef<Path>>(self, path: P) -> Result<JavaVm, EmbedError> {
         let lib = unsafe {
-            libloading::Library::new(path.as_ref())
-                .map_err(|e| EmbedError::Load(e.to_string()))?
+            libloading::Library::new(path.as_ref()).map_err(|e| EmbedError::Load(e.to_string()))?
         };
 
         let create: libloading::Symbol<jni::JNI_CreateJavaVM> = unsafe {
@@ -268,6 +272,36 @@ impl JavaVmBuilder {
     }
 }
 
+/// RAII guard for a JNI environment on the current native thread.
+///
+/// If the guard had to attach the thread, it detaches the thread on drop. If
+/// the thread was already attached, drop leaves the thread attached.
+pub struct AttachedThread<'vm> {
+    vm: &'vm JavaVm,
+    env: JniEnv,
+    detach_on_drop: bool,
+}
+
+impl<'vm> AttachedThread<'vm> {
+    /// Borrow the current thread's JNI environment.
+    pub fn env(&self) -> &JniEnv {
+        &self.env
+    }
+
+    /// Return the raw `JNIEnv*` pointer for the current thread.
+    pub fn env_ptr(&self) -> *mut jni::JNIEnv {
+        self.env.raw()
+    }
+}
+
+impl Drop for AttachedThread<'_> {
+    fn drop(&mut self) {
+        if self.detach_on_drop {
+            let _ = self.vm.detach_current_thread();
+        }
+    }
+}
+
 /// Embedded JVM handle.
 ///
 /// The `creator_env` is only valid on the thread that created the JVM.
@@ -277,6 +311,12 @@ pub struct JavaVm {
     destroyed: bool,
     _lib: Option<libloading::Library>,
 }
+
+// JavaVM is the process-wide JNI invocation interface. It is valid to share
+// for GetEnv/AttachCurrentThread/DetachCurrentThread calls; JNIEnv remains
+// thread-local and is not Send/Sync through the JniEnv wrapper.
+unsafe impl Send for JavaVm {}
+unsafe impl Sync for JavaVm {}
 
 impl JavaVm {
     /// Return the raw `JavaVM*` pointer.
@@ -297,14 +337,116 @@ impl JavaVm {
         JniEnv::from_raw(self.creator_env)
     }
 
-    /// Attach the current thread to the JVM and return a `JniEnv`.
-    pub fn attach_current_thread(&self) -> Result<JniEnv, jni::jint> {
+    /// Return the current thread's `JNIEnv*` if this thread is already attached.
+    pub fn get_env(&self, version: jni::jint) -> Result<JniEnv, jni::jint> {
         let mut env_ptr: *mut std::os::raw::c_void = ptr::null_mut();
-        let res = unsafe { crate::jvm_call!(self.vm, AttachCurrentThread, &mut env_ptr, ptr::null_mut()) };
-        if res != jni::JNI_OK || env_ptr.is_null() {
+        let res = unsafe { crate::jvm_call!(self.vm, GetEnv, &mut env_ptr, version) };
+        if res != jni::JNI_OK {
             return Err(res);
         }
+        if env_ptr.is_null() {
+            return Err(jni::JNI_ERR);
+        }
         Ok(unsafe { JniEnv::from_raw(env_ptr as *mut jni::JNIEnv) })
+    }
+
+    fn attach_current_thread_inner(&self, daemon: bool) -> Result<JniEnv, jni::jint> {
+        let mut env_ptr: *mut std::os::raw::c_void = ptr::null_mut();
+        let res = unsafe {
+            if daemon {
+                crate::jvm_call!(
+                    self.vm,
+                    AttachCurrentThreadAsDaemon,
+                    &mut env_ptr,
+                    ptr::null_mut()
+                )
+            } else {
+                crate::jvm_call!(self.vm, AttachCurrentThread, &mut env_ptr, ptr::null_mut())
+            }
+        };
+        if res != jni::JNI_OK {
+            return Err(res);
+        }
+        if env_ptr.is_null() {
+            return Err(jni::JNI_ERR);
+        }
+        Ok(unsafe { JniEnv::from_raw(env_ptr as *mut jni::JNIEnv) })
+    }
+
+    /// Attach the current thread to the JVM and return a `JniEnv`.
+    ///
+    /// If this native thread was not already attached, the caller is
+    /// responsible for later calling [`JavaVm::detach_current_thread`].
+    /// Prefer [`JavaVm::attach_current_thread_guard`] when possible.
+    pub fn attach_current_thread(&self) -> Result<JniEnv, jni::jint> {
+        self.attach_current_thread_inner(false)
+    }
+
+    /// Attach the current thread as a daemon thread.
+    ///
+    /// If this native thread was not already attached, the caller is
+    /// responsible for later calling [`JavaVm::detach_current_thread`].
+    /// Prefer [`JavaVm::attach_current_thread_as_daemon_guard`] when possible.
+    pub fn attach_current_thread_as_daemon(&self) -> Result<JniEnv, jni::jint> {
+        self.attach_current_thread_inner(true)
+    }
+
+    fn attach_current_thread_guard_inner(
+        &self,
+        daemon: bool,
+    ) -> Result<AttachedThread<'_>, jni::jint> {
+        match self.get_env(jni::JNI_VERSION_1_8) {
+            Ok(env) => Ok(AttachedThread {
+                vm: self,
+                env,
+                detach_on_drop: false,
+            }),
+            Err(jni::JNI_EDETACHED) => {
+                let env = self.attach_current_thread_inner(daemon)?;
+                Ok(AttachedThread {
+                    vm: self,
+                    env,
+                    detach_on_drop: true,
+                })
+            }
+            Err(code) => Err(code),
+        }
+    }
+
+    /// Ensure the current thread is attached and detach it automatically on drop.
+    ///
+    /// If the thread was already attached, the guard will not detach it.
+    pub fn attach_current_thread_guard(&self) -> Result<AttachedThread<'_>, jni::jint> {
+        self.attach_current_thread_guard_inner(false)
+    }
+
+    /// Ensure the current thread is daemon-attached and detach it automatically on drop.
+    ///
+    /// If the thread was already attached, the guard will not detach it.
+    pub fn attach_current_thread_as_daemon_guard(&self) -> Result<AttachedThread<'_>, jni::jint> {
+        self.attach_current_thread_guard_inner(true)
+    }
+
+    /// Run a closure with a valid `JNIEnv` for the current thread.
+    ///
+    /// Threads attached by this helper are detached when the closure returns.
+    pub fn with_attached_current_thread<R, F>(&self, f: F) -> Result<R, jni::jint>
+    where
+        F: FnOnce(&JniEnv) -> R,
+    {
+        let guard = self.attach_current_thread_guard()?;
+        Ok(f(guard.env()))
+    }
+
+    /// Run a closure with a valid daemon-attached `JNIEnv` for the current thread.
+    ///
+    /// Threads attached by this helper are detached when the closure returns.
+    pub fn with_attached_current_thread_as_daemon<R, F>(&self, f: F) -> Result<R, jni::jint>
+    where
+        F: FnOnce(&JniEnv) -> R,
+    {
+        let guard = self.attach_current_thread_as_daemon_guard()?;
+        Ok(f(guard.env()))
     }
 
     /// Detach the current thread from the JVM.

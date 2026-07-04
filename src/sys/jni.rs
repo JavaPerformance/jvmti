@@ -97,6 +97,23 @@ pub const JNI_ENOMEM: jint = -4;
 pub const JNI_EEXIST: jint = -5;
 pub const JNI_EINVAL: jint = -6;
 
+/// Return the standard JNI status constant name for a `jint` result code.
+///
+/// This is useful when surfacing Invocation API failures such as
+/// `JNI_CreateJavaVM`, `AttachCurrentThread`, or `GetEnv` errors.
+pub const fn result_name(code: jint) -> &'static str {
+    match code {
+        JNI_OK => "JNI_OK",
+        JNI_ERR => "JNI_ERR",
+        JNI_EDETACHED => "JNI_EDETACHED",
+        JNI_EVERSION => "JNI_EVERSION",
+        JNI_ENOMEM => "JNI_ENOMEM",
+        JNI_EEXIST => "JNI_EEXIST",
+        JNI_EINVAL => "JNI_EINVAL",
+        _ => "JNI_UNKNOWN",
+    }
+}
+
 pub const JNI_TRUE: jboolean = 1;
 pub const JNI_FALSE: jboolean = 0;
 

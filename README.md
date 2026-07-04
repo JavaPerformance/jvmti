@@ -51,7 +51,7 @@ C++ is the traditional choice, but Rust offers compelling advantages:
 - **Memory safety without GC** — JVMTI agents run inside the JVM process; a segfault kills the application
 - **Fearless concurrency** — JVMTI callbacks fire from multiple threads simultaneously
 - **Zero-cost abstractions** — RAII guards and Result types add safety without runtime overhead
-- **No runtime dependencies** — Deploy a single `.so`/`.dylib`/`.dll` with no external libraries
+- **No runtime dependencies by default** — Core JNI/JVMTI bindings need no external Rust crates; optional helpers are feature-gated
 - **Modern tooling** — Cargo, docs.rs, and crates.io beat Makefiles and manual distribution
 
 Java agents (`java.lang.instrument`) are simpler but can't access low-level features like heap iteration, breakpoints, or raw bytecode hooks.
@@ -63,7 +63,7 @@ Java agents (`java.lang.instrument`) are simpler but can't access low-level feat
 | **Explicit safety model** | Unsafe operations centralized; APIs return `Result` |
 | **Complete surface** | All 236 JNI + 156 JVMTI functions, mapped to Rust types |
 | **Agent-first ergonomics** | Structured callbacks, capability management, RAII resources |
-| **No hidden dependencies** | No bindgen, no build-time JVM, no global allocators |
+| **No hidden dependencies** | No bindgen, no build-time JVM, no global allocators; optional helper deps are feature-gated |
 | **Long-term compatibility** | Verified against OpenJDK headers, JDK 8 through 27 |
 
 ## Safety and FFI
@@ -254,7 +254,7 @@ If you want to **embed** a JVM inside a Rust process (not just build an agent), 
 ```rust,ignore
 use jvmti_bindings::prelude::*;
 
-let builder = JavaVmBuilder::new(jni::JNI_VERSION_1_8)
+let builder = JavaVmBuilder::default()
     .option("-Xms64m")?
     .option("-Xmx256m")?
     .option("-Djava.class.path=./myapp.jar")?;
@@ -264,10 +264,19 @@ let env = unsafe { vm.creator_env() }; // only valid on the creating thread
 
 // ... call JNI through env ...
 
+std::thread::scope(|s| {
+    s.spawn(|| {
+        vm.with_attached_current_thread(|env| {
+            let _string = env.find_class("java/lang/String");
+        })
+        .expect("attach current thread");
+    });
+});
+
 vm.destroy()?;
 ```
 
-This is feature-gated so the crate remains dependency-free by default. See `docs/EMBEDDING.md` and `examples/embed.rs` for details.
+The `embed` feature uses `libloading`; the core crate remains dependency-free by default. See `docs/EMBEDDING.md` and `examples/embed.rs` for details.
 
 ## Examples
 
@@ -343,7 +352,7 @@ Rust helps — but JVMTI is still a sharp tool.
 **Probably not, if you:**
 - Only need basic JNI calls (consider the `jni` crate)
 - Are uncomfortable debugging native JVM crashes
-- Need dynamic attach (use `Agent::on_attach` / `Agent_OnAttach`)
+- Need only pure-Java instrumentation (`java.lang.instrument` may be simpler)
 - Want zero `unsafe` anywhere
 
 ## Architecture
@@ -434,11 +443,11 @@ Bindings generated from JDK 27 headers, backwards compatible to JDK 8.
 
 | Aspect | Status |
 |--------|--------|
-| API stability | Pre-1.0, breaking changes possible |
+| API stability | SemVer 2.x; breaking changes require a major release |
 | JVMTI coverage | 156/156 (100%) |
 | JNI coverage | 236/236 (100%) |
-| Dependencies | Zero |
-| Testing | Header verification, example agents |
+| Dependencies | Zero by default; optional `embed` and `bench-tools` features |
+| Testing | Classfile parser, doctests, all-feature builds, example agents |
 
 ## Examples
 
@@ -457,7 +466,7 @@ cargo build --release --example class_logger
 
 - [**Your First Production Agent**](docs/FIRST_AGENT.md) — Step-by-step guide with production hardening
 - [**Public API Surface**](docs/PUBLIC_API.md) — What is stable and supported
-- [**API Stability Checklist**](docs/API_STABILITY.md) — Pre-1.0 stability rules
+- [**API Stability Checklist**](docs/API_STABILITY.md) — 2.x stability rules
 - [**Contributor Style Guide**](docs/STYLE_GUIDE.md) — Prelude-first and API consistency
 - [**Public API Report**](docs/PUBLIC_API_REPORT.md) — Snapshot of the public surface
 - [**API Report Script**](scripts/public_api_report.sh) — Regenerate the report with rustdoc JSON
