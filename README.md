@@ -14,6 +14,15 @@ This crate focuses on:
 
 It is intended for serious native JVM tooling, not just experimentation.
 
+## Scope boundary
+
+This crate is a **generic JNI/JVMTI binding and agent framework** (published on
+crates.io — current release **2.2.0**). Bytecode instrumentation engines, spec
+transforms, stackmap-aware BCI, and related policy live in the separate
+`bytecode-instrument` project. Do not add that instrumentation technology here
+unless there is an explicit decision to merge or port it. Agents can depend on
+both crates independently.
+
 ## Why This Exists
 
 JVMTI is powerful — and notoriously easy to misuse.
