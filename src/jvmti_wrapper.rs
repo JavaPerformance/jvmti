@@ -80,6 +80,22 @@ fn ptr_in_range(ptr: *const u8, base: *const u8, len: usize) -> bool {
     p >= b && p < b + len
 }
 
+fn jvmti_array_to_vec<T: Copy>(
+    ptr: *mut T,
+    count: jni::jint,
+) -> Result<Vec<T>, jvmti::jvmtiError> {
+    if count < 0 {
+        return Err(jvmti::jvmtiError::ILLEGAL_ARGUMENT);
+    }
+    if count == 0 {
+        return Ok(Vec::new());
+    }
+    if ptr.is_null() {
+        return Err(jvmti::jvmtiError::NULL_POINTER);
+    }
+    Ok(unsafe { std::slice::from_raw_parts(ptr, count as usize).to_vec() })
+}
+
 fn cstr_to_string(ptr: *const std::os::raw::c_char) -> Option<String> {
     if ptr.is_null() {
         return None;
@@ -360,8 +376,10 @@ impl Jvmti {
                 return Err(err);
             }
 
-            let modules = std::slice::from_raw_parts(modules_ptr, module_count as usize).to_vec();
-            self.deallocate(modules_ptr as *mut u8)?;
+            let modules = jvmti_array_to_vec(modules_ptr, module_count)?;
+            if !modules_ptr.is_null() {
+                self.deallocate(modules_ptr as *mut u8)?;
+            }
 
             Ok(modules)
         }
@@ -379,8 +397,10 @@ impl Jvmti {
                 return Err(err);
             }
 
-            let threads = std::slice::from_raw_parts(threads_ptr, threads_count as usize).to_vec();
-            self.deallocate(threads_ptr as *mut u8)?;
+            let threads = jvmti_array_to_vec(threads_ptr, threads_count)?;
+            if !threads_ptr.is_null() {
+                self.deallocate(threads_ptr as *mut u8)?;
+            }
 
             Ok(threads)
         }
@@ -570,8 +590,10 @@ impl Jvmti {
                 return Err(err);
             }
 
-            let classes = std::slice::from_raw_parts(classes_ptr, class_count as usize).to_vec();
-            self.deallocate(classes_ptr as *mut u8)?;
+            let classes = jvmti_array_to_vec(classes_ptr, class_count)?;
+            if !classes_ptr.is_null() {
+                self.deallocate(classes_ptr as *mut u8)?;
+            }
 
             Ok(classes)
         }
@@ -661,8 +683,10 @@ impl Jvmti {
             let get_groups_fn = (*(*self.env).functions).GetTopThreadGroups.unwrap();
             let err = get_groups_fn(self.env, &mut group_count, &mut groups_ptr);
             if err != jvmti::jvmtiError::NONE { return Err(err); }
-            let groups = std::slice::from_raw_parts(groups_ptr, group_count as usize).to_vec();
-            self.deallocate(groups_ptr as *mut u8)?;
+            let groups = jvmti_array_to_vec(groups_ptr, group_count)?;
+            if !groups_ptr.is_null() {
+                self.deallocate(groups_ptr as *mut u8)?;
+            }
             Ok(groups)
         }
     }
@@ -695,10 +719,14 @@ impl Jvmti {
             let get_children_fn = (*(*self.env).functions).GetThreadGroupChildren.unwrap();
             let err = get_children_fn(self.env, group, &mut thread_count, &mut threads_ptr, &mut group_count, &mut groups_ptr);
             if err != jvmti::jvmtiError::NONE { return Err(err); }
-            let threads = std::slice::from_raw_parts(threads_ptr, thread_count as usize).to_vec();
-            let groups = std::slice::from_raw_parts(groups_ptr, group_count as usize).to_vec();
-            self.deallocate(threads_ptr as *mut u8)?;
-            self.deallocate(groups_ptr as *mut u8)?;
+            let threads = jvmti_array_to_vec(threads_ptr, thread_count)?;
+            let groups = jvmti_array_to_vec(groups_ptr, group_count)?;
+            if !threads_ptr.is_null() {
+                self.deallocate(threads_ptr as *mut u8)?;
+            }
+            if !groups_ptr.is_null() {
+                self.deallocate(groups_ptr as *mut u8)?;
+            }
             Ok((threads, groups))
         }
     }
@@ -710,8 +738,10 @@ impl Jvmti {
             let get_monitors_fn = (*(*self.env).functions).GetOwnedMonitorInfo.unwrap();
             let err = get_monitors_fn(self.env, thread, &mut monitor_count, &mut monitors_ptr);
             if err != jvmti::jvmtiError::NONE { return Err(err); }
-            let monitors = std::slice::from_raw_parts(monitors_ptr, monitor_count as usize).to_vec();
-            self.deallocate(monitors_ptr as *mut u8)?;
+            let monitors = jvmti_array_to_vec(monitors_ptr, monitor_count)?;
+            if !monitors_ptr.is_null() {
+                self.deallocate(monitors_ptr as *mut u8)?;
+            }
             Ok(monitors)
         }
     }
@@ -1009,12 +1039,12 @@ impl Jvmti {
             let err = get_all_fn(self.env, max_frame_count, &mut stack_info_ptr, &mut thread_count);
             if err != jvmti::jvmtiError::NONE { return Err(err); }
         }
-        let info_slice = unsafe { std::slice::from_raw_parts(stack_info_ptr, thread_count as usize) };
+        let info_vec = jvmti_array_to_vec(stack_info_ptr, thread_count)?;
         let base = stack_info_ptr as *const u8;
         let len = (thread_count as usize) * std::mem::size_of::<jvmti::jvmtiStackInfo>();
 
         let mut out = Vec::with_capacity(thread_count as usize);
-        for info in info_slice {
+        for info in &info_vec {
             let frames = if info.frame_count > 0 && !info.frame_buffer.is_null() {
                 unsafe { std::slice::from_raw_parts(info.frame_buffer, info.frame_count as usize).to_vec() }
             } else {
@@ -1044,12 +1074,12 @@ impl Jvmti {
             let err = get_list_fn(self.env, thread_list.len() as jni::jint, thread_list.as_ptr(), max_frame_count, &mut stack_info_ptr);
             if err != jvmti::jvmtiError::NONE { return Err(err); }
         }
-        let info_slice = unsafe { std::slice::from_raw_parts(stack_info_ptr, thread_list.len()) };
+        let info_vec = jvmti_array_to_vec(stack_info_ptr, thread_list.len() as jni::jint)?;
         let base = stack_info_ptr as *const u8;
         let len = thread_list.len() * std::mem::size_of::<jvmti::jvmtiStackInfo>();
 
         let mut out = Vec::with_capacity(thread_list.len());
-        for info in info_slice {
+        for info in &info_vec {
             let frames = if info.frame_count > 0 && !info.frame_buffer.is_null() {
                 unsafe { std::slice::from_raw_parts(info.frame_buffer, info.frame_count as usize).to_vec() }
             } else {
@@ -1122,8 +1152,10 @@ impl Jvmti {
             let get_fn = (*(*self.env).functions).GetClassMethods.unwrap();
             let err = get_fn(self.env, klass, &mut method_count, &mut methods_ptr);
             if err != jvmti::jvmtiError::NONE { return Err(err); }
-            let methods = std::slice::from_raw_parts(methods_ptr, method_count as usize).to_vec();
-            self.deallocate(methods_ptr as *mut u8)?;
+            let methods = jvmti_array_to_vec(methods_ptr, method_count)?;
+            if !methods_ptr.is_null() {
+                self.deallocate(methods_ptr as *mut u8)?;
+            }
             Ok(methods)
         }
     }
@@ -1135,8 +1167,10 @@ impl Jvmti {
             let get_fn = (*(*self.env).functions).GetClassFields.unwrap();
             let err = get_fn(self.env, klass, &mut field_count, &mut fields_ptr);
             if err != jvmti::jvmtiError::NONE { return Err(err); }
-            let fields = std::slice::from_raw_parts(fields_ptr, field_count as usize).to_vec();
-            self.deallocate(fields_ptr as *mut u8)?;
+            let fields = jvmti_array_to_vec(fields_ptr, field_count)?;
+            if !fields_ptr.is_null() {
+                self.deallocate(fields_ptr as *mut u8)?;
+            }
             Ok(fields)
         }
     }
@@ -1148,8 +1182,10 @@ impl Jvmti {
             let get_fn = (*(*self.env).functions).GetImplementedInterfaces.unwrap();
             let err = get_fn(self.env, klass, &mut interface_count, &mut interfaces_ptr);
             if err != jvmti::jvmtiError::NONE { return Err(err); }
-            let interfaces = std::slice::from_raw_parts(interfaces_ptr, interface_count as usize).to_vec();
-            self.deallocate(interfaces_ptr as *mut u8)?;
+            let interfaces = jvmti_array_to_vec(interfaces_ptr, interface_count)?;
+            if !interfaces_ptr.is_null() {
+                self.deallocate(interfaces_ptr as *mut u8)?;
+            }
             Ok(interfaces)
         }
     }
@@ -1279,8 +1315,10 @@ impl Jvmti {
             let get_fn = (*(*self.env).functions).GetLineNumberTable.unwrap();
             let err = get_fn(self.env, method, &mut entry_count, &mut table_ptr);
             if err != jvmti::jvmtiError::NONE { return Err(err); }
-            let table = std::slice::from_raw_parts(table_ptr, entry_count as usize).to_vec();
-            self.deallocate(table_ptr as *mut u8)?;
+            let table = jvmti_array_to_vec(table_ptr, entry_count)?;
+            if !table_ptr.is_null() {
+                self.deallocate(table_ptr as *mut u8)?;
+            }
             Ok(table)
         }
     }
@@ -1304,12 +1342,12 @@ impl Jvmti {
             let err = get_fn(self.env, method, &mut entry_count, &mut table_ptr);
             if err != jvmti::jvmtiError::NONE { return Err(err); }
         }
-        let table = unsafe { std::slice::from_raw_parts(table_ptr, entry_count as usize) };
+        let table = jvmti_array_to_vec(table_ptr, entry_count)?;
         let base = table_ptr as *const u8;
         let len = (entry_count as usize) * std::mem::size_of::<jvmti::jvmtiLocalVariableEntry>();
 
         let mut out = Vec::with_capacity(entry_count as usize);
-        for entry in table {
+        for entry in &table {
             let name = cstr_to_string(entry.name);
             let signature = cstr_to_string(entry.signature);
             let generic_signature = cstr_to_string(entry.generic_signature);
@@ -1345,8 +1383,10 @@ impl Jvmti {
             let get_fn = (*(*self.env).functions).GetBytecodes.unwrap();
             let err = get_fn(self.env, method, &mut count, &mut bytecodes_ptr);
             if err != jvmti::jvmtiError::NONE { return Err(err); }
-            let bytecodes = std::slice::from_raw_parts(bytecodes_ptr, count as usize).to_vec();
-            self.deallocate(bytecodes_ptr)?;
+            let bytecodes = jvmti_array_to_vec(bytecodes_ptr, count)?;
+            if !bytecodes_ptr.is_null() {
+                self.deallocate(bytecodes_ptr)?;
+            }
             Ok(bytecodes)
         }
     }
@@ -1388,8 +1428,10 @@ impl Jvmti {
             let get_fn = (*(*self.env).functions).GetClassLoaderClasses.unwrap();
             let err = get_fn(self.env, initiating_loader, &mut count, &mut classes_ptr);
             if err != jvmti::jvmtiError::NONE { return Err(err); }
-            let classes = std::slice::from_raw_parts(classes_ptr, count as usize).to_vec();
-            self.deallocate(classes_ptr as *mut u8)?;
+            let classes = jvmti_array_to_vec(classes_ptr, count)?;
+            if !classes_ptr.is_null() {
+                self.deallocate(classes_ptr as *mut u8)?;
+            }
             Ok(classes)
         }
     }
@@ -1516,10 +1558,14 @@ impl Jvmti {
             let get_fn = (*(*self.env).functions).GetObjectsWithTags.unwrap();
             let err = get_fn(self.env, tags.len() as jni::jint, tags.as_ptr(), &mut count, &mut objects_ptr, &mut tags_ptr);
             if err != jvmti::jvmtiError::NONE { return Err(err); }
-            let objects = std::slice::from_raw_parts(objects_ptr, count as usize).to_vec();
-            let res_tags = std::slice::from_raw_parts(tags_ptr, count as usize).to_vec();
-            self.deallocate(objects_ptr as *mut u8)?;
-            self.deallocate(tags_ptr as *mut u8)?;
+            let objects = jvmti_array_to_vec(objects_ptr, count)?;
+            let res_tags = jvmti_array_to_vec(tags_ptr, count)?;
+            if !objects_ptr.is_null() {
+                self.deallocate(objects_ptr as *mut u8)?;
+            }
+            if !tags_ptr.is_null() {
+                self.deallocate(tags_ptr as *mut u8)?;
+            }
             Ok((objects, res_tags))
         }
     }
@@ -1786,21 +1832,21 @@ impl Jvmti {
             let err = get_fn(self.env, &mut count, &mut ext_ptr);
             if err != jvmti::jvmtiError::NONE { return Err(err); }
         }
-        let exts = unsafe { std::slice::from_raw_parts(ext_ptr, count as usize) };
+        let exts = jvmti_array_to_vec(ext_ptr, count)?;
         let base = ext_ptr as *const u8;
         let len = (count as usize) * std::mem::size_of::<jvmti::jvmtiExtensionFunctionInfo>();
 
         let mut out = Vec::with_capacity(count as usize);
-        for ext in exts {
+        for ext in &exts {
             let id = cstr_to_string(ext.id);
             let short_description = cstr_to_string(ext.short_description);
 
             let mut params = Vec::new();
             if ext.param_count > 0 && !ext.params.is_null() {
-                let params_slice = unsafe { std::slice::from_raw_parts(ext.params, ext.param_count as usize) };
+                let params_vec = jvmti_array_to_vec(ext.params, ext.param_count)?;
                 let params_base = ext.params as *const u8;
                 let params_len = (ext.param_count as usize) * std::mem::size_of::<jvmti::jvmtiExtensionParamInfo>();
-                for p in params_slice {
+                for p in &params_vec {
                     let name = cstr_to_string(p.name);
                     params.push(ExtensionParamInfo {
                         name,
@@ -1821,11 +1867,7 @@ impl Jvmti {
                 }
             }
 
-            let errors = if ext.error_count > 0 && !ext.errors.is_null() {
-                unsafe { std::slice::from_raw_parts(ext.errors, ext.error_count as usize).to_vec() }
-            } else {
-                Vec::new()
-            };
+            let errors = jvmti_array_to_vec(ext.errors, ext.error_count)?;
             if !ext.errors.is_null() && !ptr_in_range(ext.errors as *const u8, base, len) {
                 self.deallocate(ext.errors as *mut u8)?;
             }
@@ -1860,21 +1902,21 @@ impl Jvmti {
             let err = get_fn(self.env, &mut count, &mut ext_ptr);
             if err != jvmti::jvmtiError::NONE { return Err(err); }
         }
-        let exts = unsafe { std::slice::from_raw_parts(ext_ptr, count as usize) };
+        let exts = jvmti_array_to_vec(ext_ptr, count)?;
         let base = ext_ptr as *const u8;
         let len = (count as usize) * std::mem::size_of::<jvmti::jvmtiExtensionEventInfo>();
 
         let mut out = Vec::with_capacity(count as usize);
-        for ext in exts {
+        for ext in &exts {
             let id = cstr_to_string(ext.id);
             let short_description = cstr_to_string(ext.short_description);
 
             let mut params = Vec::new();
             if ext.param_count > 0 && !ext.params.is_null() {
-                let params_slice = unsafe { std::slice::from_raw_parts(ext.params, ext.param_count as usize) };
+                let params_vec = jvmti_array_to_vec(ext.params, ext.param_count)?;
                 let params_base = ext.params as *const u8;
                 let params_len = (ext.param_count as usize) * std::mem::size_of::<jvmti::jvmtiExtensionParamInfo>();
-                for p in params_slice {
+                for p in &params_vec {
                     let name = cstr_to_string(p.name);
                     params.push(ExtensionParamInfo {
                         name,
@@ -1967,10 +2009,10 @@ impl Jvmti {
             let err = get_fn(self.env, &mut count, &mut props_ptr);
             if err != jvmti::jvmtiError::NONE { return Err(err); }
             let mut props = Vec::with_capacity(count as usize);
-            let slice = std::slice::from_raw_parts(props_ptr, count as usize);
+            let prop_ptrs = jvmti_array_to_vec(props_ptr, count)?;
             let base = props_ptr as *const u8;
             let len = (count as usize) * std::mem::size_of::<*mut std::os::raw::c_char>();
-            for &p_ptr in slice {
+            for &p_ptr in &prop_ptrs {
                 props.push(std::ffi::CStr::from_ptr(p_ptr).to_string_lossy().into_owned());
                 if !ptr_in_range(p_ptr as *const u8, base, len) {
                     self.deallocate(p_ptr as *mut u8)?;
@@ -2113,8 +2155,10 @@ impl Jvmti {
             let get_fn = (*(*self.env).functions).GetConstantPool.unwrap();
             let err = get_fn(self.env, klass, &mut pool_count, &mut byte_count, &mut bytes_ptr);
             if err != jvmti::jvmtiError::NONE { return Err(err); }
-            let bytes = std::slice::from_raw_parts(bytes_ptr, byte_count as usize).to_vec();
-            self.deallocate(bytes_ptr)?;
+            let bytes = jvmti_array_to_vec(bytes_ptr, byte_count)?;
+            if !bytes_ptr.is_null() {
+                self.deallocate(bytes_ptr)?;
+            }
             Ok(bytes)
         }
     }
@@ -2174,8 +2218,10 @@ impl Jvmti {
             let get_fn = (*(*self.env).functions).GetOwnedMonitorStackDepthInfo.unwrap();
             let err = get_fn(self.env, thread, &mut count, &mut info_ptr);
             if err != jvmti::jvmtiError::NONE { return Err(err); }
-            let info = std::slice::from_raw_parts(info_ptr, count as usize).to_vec();
-            self.deallocate(info_ptr as *mut u8)?;
+            let info = jvmti_array_to_vec(info_ptr, count)?;
+            if !info_ptr.is_null() {
+                self.deallocate(info_ptr as *mut u8)?;
+            }
             Ok(info)
         }
     }
