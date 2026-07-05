@@ -114,6 +114,28 @@ impl JniEnv {
         }
     }
 
+    /// Defines a class from raw classfile bytes.
+    ///
+    /// `name` must be the internal JVM class name, such as `com/example/Helper`.
+    /// The returned class is a local reference and must be deleted by the caller.
+    pub fn define_class(&self, name: &str, loader: jni::jobject, bytes: &[u8]) -> Option<jni::jclass> {
+        if bytes.len() > jni::jsize::MAX as usize {
+            return None;
+        }
+        let c_name = CString::new(name).ok()?;
+        unsafe {
+            let vtable = *self.env;
+            let cls = ((*vtable).DefineClass)(
+                self.env,
+                c_name.as_ptr(),
+                loader,
+                bytes.as_ptr() as *const jni::jbyte,
+                bytes.len() as jni::jsize,
+            );
+            if cls.is_null() { None } else { Some(cls) }
+        }
+    }
+
     /// Gets the superclass of a class.
     pub fn get_superclass(&self, cls: jni::jclass) -> Option<jni::jclass> {
         unsafe {
@@ -145,6 +167,176 @@ impl JniEnv {
             let vtable = *self.env;
             ((*vtable).IsInstanceOf)(self.env, obj, cls) != 0
         }
+    }
+
+    // =========================================================================
+    // ClassLoader and JPMS Helpers
+    // =========================================================================
+
+    /// Returns `ClassLoader.getParent()` for a classloader object.
+    ///
+    /// A null return means either the parent is the bootstrap loader or the
+    /// lookup/call failed. Check/clear pending exceptions if you need to
+    /// distinguish those cases. The returned object is a local reference.
+    pub fn class_loader_parent(&self, loader: jni::jobject) -> Option<jni::jobject> {
+        if loader.is_null() {
+            return None;
+        }
+        let class_loader_class = self.find_class("java/lang/ClassLoader")?;
+        let Some(method) = self.get_method_id(class_loader_class, "getParent", "()Ljava/lang/ClassLoader;") else {
+            self.delete_local_ref(class_loader_class);
+            return None;
+        };
+        let parent = self.call_object_method(loader, method, &[]);
+        self.delete_local_ref(class_loader_class);
+        if parent.is_null() { None } else { Some(parent) }
+    }
+
+    /// Returns `ClassLoader.getSystemClassLoader()`.
+    ///
+    /// The returned object is a local reference.
+    pub fn system_class_loader(&self) -> Option<jni::jobject> {
+        let class_loader_class = self.find_class("java/lang/ClassLoader")?;
+        let Some(method) = self.get_static_method_id(class_loader_class, "getSystemClassLoader", "()Ljava/lang/ClassLoader;") else {
+            self.delete_local_ref(class_loader_class);
+            return None;
+        };
+        let loader = self.call_static_object_method(class_loader_class, method, &[]);
+        self.delete_local_ref(class_loader_class);
+        if loader.is_null() { None } else { Some(loader) }
+    }
+
+    /// Returns `Module.getName()`.
+    ///
+    /// Unnamed modules return `None`. The helper also returns `None` if the
+    /// reflection lookup/call fails.
+    pub fn module_name(&self, module: jni::jobject) -> Option<String> {
+        if module.is_null() {
+            return None;
+        }
+        let module_class = self.get_object_class(module);
+        let Some(method) = self.get_method_id(module_class, "getName", "()Ljava/lang/String;") else {
+            self.delete_local_ref(module_class);
+            return None;
+        };
+        let name_obj = self.call_object_method(module, method, &[]);
+        self.delete_local_ref(module_class);
+        if name_obj.is_null() {
+            return None;
+        }
+        let name = self.get_string_utf(name_obj as jni::jstring);
+        self.delete_local_ref(name_obj);
+        name
+    }
+
+    /// Returns `Module.getPackages()` as dotted Java package names.
+    pub fn module_packages(&self, module: jni::jobject) -> Option<Vec<String>> {
+        if module.is_null() {
+            return None;
+        }
+        let module_class = self.get_object_class(module);
+        let Some(method) = self.get_method_id(module_class, "getPackages", "()Ljava/util/Set;") else {
+            self.delete_local_ref(module_class);
+            return None;
+        };
+        let package_set = self.call_object_method(module, method, &[]);
+        self.delete_local_ref(module_class);
+        if package_set.is_null() {
+            return Some(Vec::new());
+        }
+        let set_class = self.get_object_class(package_set);
+        let Some(to_array) = self.get_method_id(set_class, "toArray", "()[Ljava/lang/Object;") else {
+            self.delete_local_ref(set_class);
+            self.delete_local_ref(package_set);
+            return None;
+        };
+        let array = self.call_object_method(package_set, to_array, &[]) as jni::jobjectArray;
+        self.delete_local_ref(set_class);
+        self.delete_local_ref(package_set);
+        if array.is_null() {
+            return Some(Vec::new());
+        }
+        let len = self.get_array_length(array);
+        let mut packages = Vec::new();
+        for index in 0..len {
+            let element = self.get_object_array_element(array, index);
+            if !element.is_null() {
+                if let Some(package_name) = self.get_string_utf(element as jni::jstring) {
+                    packages.push(package_name);
+                }
+                self.delete_local_ref(element);
+            }
+        }
+        self.delete_local_ref(array);
+        Some(packages)
+    }
+
+    /// Returns `Module.getClassLoader()`.
+    ///
+    /// A null return means the module is associated with the bootstrap loader or
+    /// the lookup/call failed. The returned object is a local reference.
+    pub fn module_class_loader(&self, module: jni::jobject) -> Option<jni::jobject> {
+        if module.is_null() {
+            return None;
+        }
+        let module_class = self.get_object_class(module);
+        let Some(method) = self.get_method_id(module_class, "getClassLoader", "()Ljava/lang/ClassLoader;") else {
+            self.delete_local_ref(module_class);
+            return None;
+        };
+        let loader = self.call_object_method(module, method, &[]);
+        self.delete_local_ref(module_class);
+        if loader.is_null() { None } else { Some(loader) }
+    }
+
+    /// Returns `Module.canRead(other)`.
+    pub fn module_can_read(&self, module: jni::jobject, other: jni::jobject) -> bool {
+        if module.is_null() || other.is_null() {
+            return false;
+        }
+        let module_class = self.get_object_class(module);
+        let Some(method) = self.get_method_id(module_class, "canRead", "(Ljava/lang/Module;)Z") else {
+            self.delete_local_ref(module_class);
+            return false;
+        };
+        let args = [jni::jvalue { l: other }];
+        let can_read = self.call_boolean_method(module, method, &args);
+        self.delete_local_ref(module_class);
+        can_read
+    }
+
+    /// Returns `Module.isExported(package_name, other)`.
+    ///
+    /// `package_name` must use dotted Java package syntax.
+    pub fn module_is_exported_to(&self, module: jni::jobject, package_name: &str, other: jni::jobject) -> bool {
+        self.module_package_access(module, package_name, other, "isExported")
+    }
+
+    /// Returns `Module.isOpen(package_name, other)`.
+    ///
+    /// `package_name` must use dotted Java package syntax.
+    pub fn module_is_open_to(&self, module: jni::jobject, package_name: &str, other: jni::jobject) -> bool {
+        self.module_package_access(module, package_name, other, "isOpen")
+    }
+
+    fn module_package_access(&self, module: jni::jobject, package_name: &str, other: jni::jobject, method_name: &str) -> bool {
+        if module.is_null() || other.is_null() {
+            return false;
+        }
+        let module_class = self.get_object_class(module);
+        let Some(method) = self.get_method_id(module_class, method_name, "(Ljava/lang/String;Ljava/lang/Module;)Z") else {
+            self.delete_local_ref(module_class);
+            return false;
+        };
+        let Some(package) = self.new_string_utf(package_name) else {
+            self.delete_local_ref(module_class);
+            return false;
+        };
+        let args = [jni::jvalue { l: package }, jni::jvalue { l: other }];
+        let result = self.call_boolean_method(module, method, &args);
+        self.delete_local_ref(package);
+        self.delete_local_ref(module_class);
+        result
     }
 
     // =========================================================================

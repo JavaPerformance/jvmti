@@ -90,12 +90,26 @@ Details: `docs/PUBLIC_API.md`.
 If you need raw JNI/JVMTI functions, use:
 1. `jvmti_bindings::sys::jni` and `jvmti_bindings::sys::jvmti` for raw types and vtables.
 2. `JniEnv::raw()` and `Jvmti::raw()` to access the underlying raw pointers.
+3. `Agent::*_with_jvmti` callback variants when a callback needs the exact `jvmtiEnv*` supplied by the JVM.
 
 ## Attach and Threading Rules
 
 1. `Agent_OnAttach` is supported via the `export_agent!` macro and `Agent::on_attach`.
 2. `JNIEnv` is thread-local and must only be used on its originating thread.
 3. `GlobalRef` cleanup attaches to the JVM when needed, but you should still manage lifetimes explicitly.
+4. For bytecode transforms and live metadata collection, prefer `class_file_load_hook_with_jvmti`, `vm_init_with_jvmti`, or the other `*_with_jvmti` methods over rediscovering JVMTI from `JavaVM`.
+
+## ClassLoader and JPMS Helpers
+
+`JniEnv` includes neutral helpers for modern agent work:
+
+- `define_class` for target-loader helper injection.
+- `class_loader_parent` and `system_class_loader` for loader graph discovery.
+- `module_name`, `module_packages`, and `module_class_loader` for JPMS metadata.
+- `module_can_read`, `module_is_exported_to`, and `module_is_open_to` for visibility preflight.
+
+These are generic JNI conveniences. Higher-level instrumentation policy,
+helper deployment, and compatibility planning remain outside this crate.
 
 ## Compatibility
 
@@ -312,9 +326,12 @@ The macro generates the native entry points the JVM expects.
 - Hide undefined JVMTI behavior
 - Make callbacks re-entrant or async-safe
 - Attach arbitrary native threads automatically
-- Obtain the JVMTI environment for you
 - Register callbacks or enable events
 - Prevent JVM crashes from invalid JVMTI usage
+
+For callbacks that need the raw JVMTI callback environment, implement the
+corresponding `*_with_jvmti` method, for example `vm_init_with_jvmti` or
+`class_file_load_hook_with_jvmti`.
 
 The goal is clarity, not magic.
 
@@ -367,7 +384,7 @@ Rust helps — but JVMTI is still a sharp tool.
 ├─────────────────────────────────────────────────────────┤
 │              High-Level Wrappers (env module)            │
 │   Jvmti      - JVMTI operations (150+ methods)           │
-│   JniEnv     - JNI operations (60+ methods)              │
+│   JniEnv     - JNI operations plus ClassLoader/JPMS      │
 │   LocalRef   - RAII guard, prevented from escaping       │
 │   GlobalRef  - RAII guard, releases on drop              │
 ├─────────────────────────────────────────────────────────┤

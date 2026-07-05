@@ -288,16 +288,35 @@ pub trait Agent: Sync + Send {
     /// The `thread` parameter is the main thread.
     fn vm_init(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread) {}
 
+    /// Same as [`Agent::vm_init`], but also exposes the callback's `jvmtiEnv*`.
+    ///
+    /// Prefer this when the callback needs to allocate JVMTI memory, query class
+    /// metadata, tag objects, or preserve the exact environment that owns the
+    /// capabilities requested in `on_load`.
+    fn vm_init_with_jvmti(&self, _jvmti: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread) {
+        self.vm_init(jni, thread);
+    }
+
     /// Called when the VM is about to terminate.
     ///
     /// This is your last chance to perform cleanup that requires JNI.
     fn vm_death(&self, _jni: *mut jni::JNIEnv) {}
+
+    /// Same as [`Agent::vm_death`], but also exposes the callback's `jvmtiEnv*`.
+    fn vm_death_with_jvmti(&self, _jvmti: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv) {
+        self.vm_death(jni);
+    }
 
     /// Called when the VM starts (before `vm_init`).
     ///
     /// JNI is available but limited - you cannot create new threads or load classes.
     /// Requires `can_generate_early_vmstart` capability for early delivery.
     fn vm_start(&self, _jni: *mut jni::JNIEnv) {}
+
+    /// Same as [`Agent::vm_start`], but also exposes the callback's `jvmtiEnv*`.
+    fn vm_start_with_jvmti(&self, _jvmti: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv) {
+        self.vm_start(jni);
+    }
 
     // =========================================================================
     // THREAD EVENTS
@@ -320,10 +339,20 @@ pub trait Agent: Sync + Send {
     /// The class is not yet usable at this point.
     fn class_load(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread, _klass: jni::jclass) {}
 
+    /// Same as [`Agent::class_load`], but also exposes the callback's `jvmtiEnv*`.
+    fn class_load_with_jvmti(&self, _jvmti: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread, klass: jni::jclass) {
+        self.class_load(jni, thread, klass);
+    }
+
     /// Called when a class is prepared (linked and ready to use).
     ///
     /// At this point you can query the class's methods and fields.
     fn class_prepare(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread, _klass: jni::jclass) {}
+
+    /// Same as [`Agent::class_prepare`], but also exposes the callback's `jvmtiEnv*`.
+    fn class_prepare_with_jvmti(&self, _jvmti: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread, klass: jni::jclass) {
+        self.class_prepare(jni, thread, klass);
+    }
 
     /// Called when class bytecode is being loaded or redefined.
     ///
@@ -340,6 +369,22 @@ pub trait Agent: Sync + Send {
                             _new_class_data_len: *mut jni::jint,
                             _new_class_data: *mut *mut std::os::raw::c_uchar) {}
 
+    /// Same as [`Agent::class_file_load_hook`], but also exposes the callback's
+    /// `jvmtiEnv*`.
+    ///
+    /// This is the preferred entry point for bytecode transformers because
+    /// transformed bytes must be allocated with the same JVMTI environment.
+    #[allow(clippy::too_many_arguments)]
+    fn class_file_load_hook_with_jvmti(&self, _jvmti: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv,
+                                       class_being_redefined: jni::jclass, loader: jni::jobject,
+                                       name: *const std::os::raw::c_char,
+                                       protection_domain: jni::jobject, class_data_len: jni::jint,
+                                       class_data: *const std::os::raw::c_uchar,
+                                       new_class_data_len: *mut jni::jint,
+                                       new_class_data: *mut *mut std::os::raw::c_uchar) {
+        self.class_file_load_hook(jni, class_being_redefined, loader, name, protection_domain, class_data_len, class_data, new_class_data_len, new_class_data);
+    }
+
     // =========================================================================
     // METHOD EVENTS
     // =========================================================================
@@ -350,11 +395,21 @@ pub trait Agent: Sync + Send {
     /// Requires `can_generate_method_entry_events` capability.
     fn method_entry(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread, _method: jni::jmethodID) {}
 
+    /// Same as [`Agent::method_entry`], but also exposes the callback's `jvmtiEnv*`.
+    fn method_entry_with_jvmti(&self, _jvmti: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread, method: jni::jmethodID) {
+        self.method_entry(jni, thread, method);
+    }
+
     /// Called when a method is about to return.
     ///
     /// **Warning**: This fires for EVERY method return - extremely high overhead.
     /// Requires `can_generate_method_exit_events` capability.
     fn method_exit(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread, _method: jni::jmethodID) {}
+
+    /// Same as [`Agent::method_exit`], but also exposes the callback's `jvmtiEnv*`.
+    fn method_exit_with_jvmti(&self, _jvmti: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread, method: jni::jmethodID) {
+        self.method_exit(jni, thread, method);
+    }
 
     /// Called when a native method is bound to its implementation.
     ///
@@ -503,18 +558,18 @@ pub fn set_global_agent(agent: Box<dyn Agent>) -> Result<(), ()> {
 }
 
 unsafe extern "system" fn trampoline_method_entry(
-    _jvmti_env: *mut sys::jvmti::jvmtiEnv,
+    jvmti_env: *mut sys::jvmti::jvmtiEnv,
     jni_env: *mut jni::JNIEnv,
     thread: jni::jthread,
     method: jni::jmethodID,
 ) {
     if let Some(agent) = GLOBAL_AGENT.get() {
-        agent.method_entry(jni_env, thread, method);
+        agent.method_entry_with_jvmti(jvmti_env, jni_env, thread, method);
     }
 }
 
 unsafe extern "system" fn trampoline_method_exit(
-    _jvmti_env: *mut sys::jvmti::jvmtiEnv,
+    jvmti_env: *mut sys::jvmti::jvmtiEnv,
     jni_env: *mut jni::JNIEnv,
     thread: jni::jthread,
     method: jni::jmethodID,
@@ -522,7 +577,7 @@ unsafe extern "system" fn trampoline_method_exit(
     _ret_val: jni::jvalue,
 ) {
     if let Some(agent) = GLOBAL_AGENT.get() {
-        agent.method_exit(jni_env, thread, method);
+        agent.method_exit_with_jvmti(jvmti_env, jni_env, thread, method);
     }
 }
 
@@ -535,14 +590,14 @@ unsafe extern "system" fn trampoline_native_method_bind(
 
 
 // --- 1. Lifecycle ---
-unsafe extern "system" fn trampoline_vm_init(_env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread) {
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.vm_init(jni, thread); }
+unsafe extern "system" fn trampoline_vm_init(env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread) {
+    if let Some(agent) = GLOBAL_AGENT.get() { agent.vm_init_with_jvmti(env, jni, thread); }
 }
-unsafe extern "system" fn trampoline_vm_death(_env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv) {
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.vm_death(jni); }
+unsafe extern "system" fn trampoline_vm_death(env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv) {
+    if let Some(agent) = GLOBAL_AGENT.get() { agent.vm_death_with_jvmti(env, jni); }
 }
-unsafe extern "system" fn trampoline_vm_start(_env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv) {
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.vm_start(jni); }
+unsafe extern "system" fn trampoline_vm_start(env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv) {
+    if let Some(agent) = GLOBAL_AGENT.get() { agent.vm_start_with_jvmti(env, jni); }
 }
 
 // --- 2. Threads ---
@@ -554,11 +609,11 @@ unsafe extern "system" fn trampoline_thread_end(_env: *mut jvmti::jvmtiEnv, jni:
 }
 
 // --- 3. Classes ---
-unsafe extern "system" fn trampoline_class_load(_env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread, klass: jni::jclass) {
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.class_load(jni, thread, klass); }
+unsafe extern "system" fn trampoline_class_load(env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread, klass: jni::jclass) {
+    if let Some(agent) = GLOBAL_AGENT.get() { agent.class_load_with_jvmti(env, jni, thread, klass); }
 }
-unsafe extern "system" fn trampoline_class_prepare(_env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread, klass: jni::jclass) {
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.class_prepare(jni, thread, klass); }
+unsafe extern "system" fn trampoline_class_prepare(env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread, klass: jni::jclass) {
+    if let Some(agent) = GLOBAL_AGENT.get() { agent.class_prepare_with_jvmti(env, jni, thread, klass); }
 }
 
 // --- 3.5 Compiled Code ---
@@ -575,13 +630,13 @@ unsafe extern "system" fn trampoline_dynamic_code_generated(_env: *mut jvmti::jv
     if let Some(agent) = GLOBAL_AGENT.get() { agent.dynamic_code_generated(name, address, length); }
 }
 unsafe extern "system" fn trampoline_class_file_load_hook(
-    _env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv,
+    env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv,
     class_being_redefined: jni::jclass, loader: jni::jobject, name: *const std::os::raw::c_char,
     protection_domain: jni::jobject, class_data_len: jni::jint, class_data: *const std::os::raw::c_uchar,
     new_class_data_len: *mut jni::jint, new_class_data: *mut *mut std::os::raw::c_uchar
 ) {
     if let Some(agent) = GLOBAL_AGENT.get() {
-        agent.class_file_load_hook(jni, class_being_redefined, loader, name, protection_domain, class_data_len, class_data, new_class_data_len, new_class_data);
+        agent.class_file_load_hook_with_jvmti(env, jni, class_being_redefined, loader, name, protection_domain, class_data_len, class_data, new_class_data_len, new_class_data);
     }
 }
 
