@@ -93,7 +93,7 @@
 //! |--------|---------|
 //! | [`sys::jni`] | Raw JNI types and vtable (for FFI) |
 //! | [`sys::jvmti`] | Raw JVMTI types, vtable, capabilities, events |
-//! | [`env`] | **High-level wrappers** - start here for ergonomic APIs |
+//! | [`mod@env`] | **High-level wrappers** - start here for ergonomic APIs |
 //! | [`env::Jvmti`] | JVMTI environment wrapper (153 methods) |
 //! | [`env::JniEnv`] | JNI environment wrapper (60+ methods) |
 //! | [`classfile`] | Class file parser with all Java 8-27 attributes |

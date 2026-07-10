@@ -422,7 +422,8 @@ impl JniEnv {
     /// Gets a Rust string from a Java string.
     ///
     /// Returns `None` if the string is null or contains invalid modified UTF-8.
-    /// For full-fidelity Unicode (including embedded nulls), use [`get_string`].
+    /// For full-fidelity Unicode (including embedded nulls), use
+    /// [`Self::get_string`].
     pub fn get_string_utf(&self, s: jni::jstring) -> Option<String> {
         if s.is_null() {
             return None;
