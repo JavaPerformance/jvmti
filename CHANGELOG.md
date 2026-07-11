@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.2.1
+
+### Added
+1. `Agent::data_dump_request`, `Agent::virtual_thread_start`, and `Agent::virtual_thread_end` callbacks.
+2. ABI regression tests for every JVMTI event number, reserved callback slot, and JDK-generation callback-table prefix.
+3. `scripts/prove-event-callback-matrix.sh`, which loads a real Rust agent and exercises method-entry and post-gap GC callbacks under each installed JDK.
+
+### Fixed
+1. Corrected JVMTI event constants from `MethodEntry` onward to match the specification (`65` through `88`).
+2. Corrected `jvmtiEventCallbacks` to preserve reserved slots `72`, `77`, `78`, `79`, and `85`.
+3. Added the JDK 21 virtual-thread callback tail and a typed `DataDumpRequest` callback, restoring ABI-compatible callback delivery on JDK 8 through 27.
+
 ## 2.2.0
 
 ### Added

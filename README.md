@@ -17,7 +17,7 @@ It is intended for serious native JVM tooling, not just experimentation.
 ## Scope boundary
 
 This crate is a **generic JNI/JVMTI binding and agent framework** (published on
-crates.io — current release **2.2.0**). Bytecode instrumentation engines, spec
+crates.io — current release **2.2.1**). Bytecode instrumentation engines, spec
 transforms, stackmap-aware BCI, and related policy live in the separate
 `bytecode-instrument` project. Do not add that instrumentation technology here
 unless there is an explicit decision to merge or port it. Agents can depend on
@@ -123,6 +123,11 @@ helper deployment, and compatibility planning remain outside this crate.
 ## Compatibility
 
 See `docs/COMPATIBILITY.md` for a full JDK 8-27 matrix.
+
+The event callback ABI has dedicated offset tests and a live multi-JDK agent
+proof. Run `cargo test --test jvmti_event_abi` for the portable checks or
+`scripts/prove-event-callback-matrix.sh` to exercise callback delivery on the
+installed JVMs.
 
 ## Advanced Helpers
 

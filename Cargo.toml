@@ -4,7 +4,7 @@
 
 [package]
 name = "jvmti-bindings"
-version = "2.2.0"
+version = "2.2.1"
 edition = "2021"
 rust-version = "1.70"
 
@@ -75,6 +75,10 @@ crate-type = ["cdylib"]
 
 [[example]]
 name = "attach_logger"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "event_abi_smoke"
 crate-type = ["cdylib"]
 
 [[example]]

@@ -45,23 +45,25 @@ pub const JVMTI_EVENT_FRAME_POP: u32 = 61;
 pub const JVMTI_EVENT_BREAKPOINT: u32 = 62;
 pub const JVMTI_EVENT_FIELD_ACCESS: u32 = 63;
 pub const JVMTI_EVENT_FIELD_MODIFICATION: u32 = 64;
-pub const JVMTI_EVENT_METHOD_ENTRY: u32 = 66;
-pub const JVMTI_EVENT_METHOD_EXIT: u32 = 67;
-pub const JVMTI_EVENT_NATIVE_METHOD_BIND: u32 = 68;
-pub const JVMTI_EVENT_COMPILED_METHOD_LOAD: u32 = 69;
-pub const JVMTI_EVENT_COMPILED_METHOD_UNLOAD: u32 = 70;
-pub const JVMTI_EVENT_DYNAMIC_CODE_GENERATED: u32 = 71;
-pub const JVMTI_EVENT_DATA_DUMP_REQUEST: u32 = 72;
+pub const JVMTI_EVENT_METHOD_ENTRY: u32 = 65;
+pub const JVMTI_EVENT_METHOD_EXIT: u32 = 66;
+pub const JVMTI_EVENT_NATIVE_METHOD_BIND: u32 = 67;
+pub const JVMTI_EVENT_COMPILED_METHOD_LOAD: u32 = 68;
+pub const JVMTI_EVENT_COMPILED_METHOD_UNLOAD: u32 = 69;
+pub const JVMTI_EVENT_DYNAMIC_CODE_GENERATED: u32 = 70;
+pub const JVMTI_EVENT_DATA_DUMP_REQUEST: u32 = 71;
 pub const JVMTI_EVENT_MONITOR_WAIT: u32 = 73;
 pub const JVMTI_EVENT_MONITOR_WAITED: u32 = 74;
 pub const JVMTI_EVENT_MONITOR_CONTENDED_ENTER: u32 = 75;
 pub const JVMTI_EVENT_MONITOR_CONTENDED_ENTERED: u32 = 76;
-pub const JVMTI_EVENT_RESOURCE_EXHAUSTED: u32 = 77;
-pub const JVMTI_EVENT_GARBAGE_COLLECTION_START: u32 = 78;
-pub const JVMTI_EVENT_GARBAGE_COLLECTION_FINISH: u32 = 79;
-pub const JVMTI_EVENT_OBJECT_FREE: u32 = 80;
-pub const JVMTI_EVENT_VM_OBJECT_ALLOC: u32 = 81;
-pub const JVMTI_EVENT_SAMPLED_OBJECT_ALLOC: u32 = 82;
+pub const JVMTI_EVENT_RESOURCE_EXHAUSTED: u32 = 80;
+pub const JVMTI_EVENT_GARBAGE_COLLECTION_START: u32 = 81;
+pub const JVMTI_EVENT_GARBAGE_COLLECTION_FINISH: u32 = 82;
+pub const JVMTI_EVENT_OBJECT_FREE: u32 = 83;
+pub const JVMTI_EVENT_VM_OBJECT_ALLOC: u32 = 84;
+pub const JVMTI_EVENT_SAMPLED_OBJECT_ALLOC: u32 = 86;
+pub const JVMTI_EVENT_VIRTUAL_THREAD_START: u32 = 87;
+pub const JVMTI_EVENT_VIRTUAL_THREAD_END: u32 = 88;
 
 // --- Heap Object Filters ---
 pub const JVMTI_HEAP_OBJECT_EITHER: jint = 0;
@@ -934,6 +936,10 @@ pub type JvmtiDynamicCodeGeneratedFn = unsafe extern "system" fn(
     length: jint
 );
 
+pub type JvmtiDataDumpRequestFn = unsafe extern "system" fn(jvmti_env: *mut jvmtiEnv);
+
+pub type JvmtiEventReservedFn = unsafe extern "system" fn();
+
 // 9. Monitors (Locks)
 pub type JvmtiMonitorWaitFn = unsafe extern "system" fn(
     jvmti_env: *mut jvmtiEnv, jni_env: *mut JNIEnv, thread: jthread, object: jobject, timeout: jlong
@@ -981,6 +987,18 @@ pub type JvmtiSampledObjectAllocFn = unsafe extern "system" fn(
     object: jobject,
     object_klass: jclass,
     size: jlong
+);
+
+pub type JvmtiVirtualThreadStartFn = unsafe extern "system" fn(
+    jvmti_env: *mut jvmtiEnv,
+    jni_env: *mut JNIEnv,
+    virtual_thread: jthread,
+);
+
+pub type JvmtiVirtualThreadEndFn = unsafe extern "system" fn(
+    jvmti_env: *mut jvmtiEnv,
+    jni_env: *mut JNIEnv,
+    virtual_thread: jthread,
 );
 
 
@@ -1331,15 +1349,22 @@ pub struct jvmtiEventCallbacks {
     pub CompiledMethodLoad: Option<JvmtiCompiledMethodLoadFn>,
     pub CompiledMethodUnload: Option<JvmtiCompiledMethodUnloadFn>,
     pub DynamicCodeGenerated: Option<JvmtiDynamicCodeGeneratedFn>,
-    pub DataDumpRequest: *mut std::os::raw::c_void, // We haven't defined this Fn yet
+    pub DataDumpRequest: Option<JvmtiDataDumpRequestFn>,
+    pub reserved72: Option<JvmtiEventReservedFn>,
     pub MonitorWait: Option<JvmtiMonitorWaitFn>,
     pub MonitorWaited: Option<JvmtiMonitorWaitedFn>,
     pub MonitorContendedEnter: Option<JvmtiMonitorContendedEnterFn>,
     pub MonitorContendedEntered: Option<JvmtiMonitorContendedEnteredFn>,
+    pub reserved77: Option<JvmtiEventReservedFn>,
+    pub reserved78: Option<JvmtiEventReservedFn>,
+    pub reserved79: Option<JvmtiEventReservedFn>,
     pub ResourceExhausted: Option<JvmtiResourceExhaustedFn>,
     pub GarbageCollectionStart: Option<JvmtiGarbageCollectionStartFn>,
     pub GarbageCollectionFinish: Option<JvmtiGarbageCollectionFinishFn>,
     pub ObjectFree: Option<JvmtiObjectFreeFn>,
     pub VMObjectAlloc: Option<JvmtiVMObjectAllocFn>,
+    pub reserved85: Option<JvmtiEventReservedFn>,
     pub SampledObjectAlloc: Option<JvmtiSampledObjectAllocFn>,
+    pub VirtualThreadStart: Option<JvmtiVirtualThreadStartFn>,
+    pub VirtualThreadEnd: Option<JvmtiVirtualThreadEndFn>,
 }

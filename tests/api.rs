@@ -103,4 +103,7 @@ fn agent_jvmti_callback_variants_are_public_api() {
     );
     jvmti_bindings::Agent::vm_death_with_jvmti(&agent, ptr::null_mut(), ptr::null_mut());
     jvmti_bindings::Agent::vm_start_with_jvmti(&agent, ptr::null_mut(), ptr::null_mut());
+    jvmti_bindings::Agent::data_dump_request(&agent);
+    jvmti_bindings::Agent::virtual_thread_start(&agent, ptr::null_mut(), ptr::null_mut());
+    jvmti_bindings::Agent::virtual_thread_end(&agent, ptr::null_mut(), ptr::null_mut());
 }
