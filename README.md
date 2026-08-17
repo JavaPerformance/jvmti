@@ -345,7 +345,37 @@ The macro generates the native entry points the JVM expects.
 
 For callbacks that need the raw JVMTI callback environment, implement the
 corresponding `*_with_jvmti` method, for example `vm_init_with_jvmti` or
-`class_file_load_hook_with_jvmti`.
+`class_file_load_hook_with_jvmti`. JIT event handlers can use
+`compiled_method_load_with_jvmti`, `compiled_method_unload_with_jvmti`, and
+`dynamic_code_generated_with_jvmti`; the original callback methods remain
+available for implementations that do not need the environment.
+
+For example, a compiled-method callback can wrap the callback-scoped pointer
+and query method metadata directly:
+
+```rust,ignore
+fn compiled_method_load_with_jvmti(
+    &self,
+    env: *mut jvmti::jvmtiEnv,
+    method: jni::jmethodID,
+    _code_size: jni::jint,
+    _code_addr: *const std::ffi::c_void,
+    _map_length: jni::jint,
+    _map: *const std::ffi::c_void,
+    _compile_info: *const std::ffi::c_void,
+) {
+    // SAFETY: `env` is supplied by the JVM and is used only during this callback.
+    let jvmti = unsafe { Jvmti::from_raw(env) };
+
+    if let Ok((name, signature, _generic)) = jvmti.get_method_name(method) {
+        let lines = jvmti.get_line_number_table(method).unwrap_or_default();
+        println!("compiled {name}{signature}: {} line entries", lines.len());
+    }
+}
+```
+
+`get_line_number_table` additionally requires the `can_get_line_numbers`
+capability to be requested before the VM enters the live phase.
 
 The goal is clarity, not magic.
 

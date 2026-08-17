@@ -439,11 +439,60 @@ pub trait Agent: Sync + Send {
     /// Requires `can_generate_compiled_method_load_events` capability.
     fn compiled_method_load(&self, _method: jni::jmethodID, _code_size: jni::jint, _code_addr: *const std::os::raw::c_void, _map_length: jni::jint, _map: *const std::os::raw::c_void, _compile_info: *const std::os::raw::c_void) {}
 
+    /// Same as [`Agent::compiled_method_load`], but also exposes the callback's
+    /// `jvmtiEnv*`.
+    ///
+    /// Use [`env::Jvmti::from_raw`] with this pointer to query the compiled
+    /// method's name, declaring class, line number table, and other metadata.
+    #[allow(clippy::too_many_arguments)]
+    fn compiled_method_load_with_jvmti(
+        &self,
+        _jvmti: *mut jvmti::jvmtiEnv,
+        method: jni::jmethodID,
+        code_size: jni::jint,
+        code_addr: *const std::os::raw::c_void,
+        map_length: jni::jint,
+        map: *const std::os::raw::c_void,
+        compile_info: *const std::os::raw::c_void,
+    ) {
+        self.compiled_method_load(
+            method,
+            code_size,
+            code_addr,
+            map_length,
+            map,
+            compile_info,
+        );
+    }
+
     /// Called when JIT-compiled code is unloaded (deoptimized).
     fn compiled_method_unload(&self, _method: jni::jmethodID, _code_addr: *const std::os::raw::c_void) {}
 
+    /// Same as [`Agent::compiled_method_unload`], but also exposes the
+    /// callback's `jvmtiEnv*`.
+    fn compiled_method_unload_with_jvmti(
+        &self,
+        _jvmti: *mut jvmti::jvmtiEnv,
+        method: jni::jmethodID,
+        code_addr: *const std::os::raw::c_void,
+    ) {
+        self.compiled_method_unload(method, code_addr);
+    }
+
     /// Called when dynamic code is generated (e.g., JIT stubs).
     fn dynamic_code_generated(&self, _name: *const std::os::raw::c_char, _address: *const std::os::raw::c_void, _length: jni::jint) {}
+
+    /// Same as [`Agent::dynamic_code_generated`], but also exposes the
+    /// callback's `jvmtiEnv*`.
+    fn dynamic_code_generated_with_jvmti(
+        &self,
+        _jvmti: *mut jvmti::jvmtiEnv,
+        name: *const std::os::raw::c_char,
+        address: *const std::os::raw::c_void,
+        length: jni::jint,
+    ) {
+        self.dynamic_code_generated(name, address, length);
+    }
 
     /// Called when the JVM requests that the agent dump diagnostic data.
     ///
@@ -655,16 +704,44 @@ unsafe extern "system" fn trampoline_class_prepare(env: *mut jvmti::jvmtiEnv, jn
 
 // --- 3.5 Compiled Code ---
 unsafe extern "system" fn trampoline_compiled_method_load(
-    _env: *mut jvmti::jvmtiEnv, method: jni::jmethodID, code_size: jni::jint, code_addr: *const std::os::raw::c_void,
-    map_length: jni::jint, map: *const std::os::raw::c_void, compile_info: *const std::os::raw::c_void
+    env: *mut jvmti::jvmtiEnv,
+    method: jni::jmethodID,
+    code_size: jni::jint,
+    code_addr: *const std::os::raw::c_void,
+    map_length: jni::jint,
+    map: *const std::os::raw::c_void,
+    compile_info: *const std::os::raw::c_void,
 ) {
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.compiled_method_load(method, code_size, code_addr, map_length, map, compile_info); }
+    if let Some(agent) = GLOBAL_AGENT.get() {
+        agent.compiled_method_load_with_jvmti(
+            env,
+            method,
+            code_size,
+            code_addr,
+            map_length,
+            map,
+            compile_info,
+        );
+    }
 }
-unsafe extern "system" fn trampoline_compiled_method_unload(_env: *mut jvmti::jvmtiEnv, method: jni::jmethodID, code_addr: *const std::os::raw::c_void) {
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.compiled_method_unload(method, code_addr); }
+unsafe extern "system" fn trampoline_compiled_method_unload(
+    env: *mut jvmti::jvmtiEnv,
+    method: jni::jmethodID,
+    code_addr: *const std::os::raw::c_void,
+) {
+    if let Some(agent) = GLOBAL_AGENT.get() {
+        agent.compiled_method_unload_with_jvmti(env, method, code_addr);
+    }
 }
-unsafe extern "system" fn trampoline_dynamic_code_generated(_env: *mut jvmti::jvmtiEnv, name: *const std::os::raw::c_char, address: *const std::os::raw::c_void, length: jni::jint) {
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.dynamic_code_generated(name, address, length); }
+unsafe extern "system" fn trampoline_dynamic_code_generated(
+    env: *mut jvmti::jvmtiEnv,
+    name: *const std::os::raw::c_char,
+    address: *const std::os::raw::c_void,
+    length: jni::jint,
+) {
+    if let Some(agent) = GLOBAL_AGENT.get() {
+        agent.dynamic_code_generated_with_jvmti(env, name, address, length);
+    }
 }
 unsafe extern "system" fn trampoline_data_dump_request(_env: *mut jvmti::jvmtiEnv) {
     if let Some(agent) = GLOBAL_AGENT.get() {
