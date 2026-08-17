@@ -14,8 +14,8 @@ struct HeapSampler {
 }
 
 impl Agent for HeapSampler {
-    fn on_load(&self, vm: *mut jni::JavaVM, _options: &str) -> jni::jint {
-        let jvmti = match Jvmti::new(vm) {
+    fn on_load(&self, context: AgentLoadContext<'_>) -> jni::jint {
+        let jvmti = match context.vm().jvmti() {
             Ok(env) => env,
             Err(e) => {
                 eprintln!("[heap] Failed to get JVMTI: {:?}", e);
@@ -43,18 +43,11 @@ impl Agent for HeapSampler {
         jni::JNI_OK
     }
 
-    fn sampled_object_alloc(
-        &self,
-        _jni: *mut jni::JNIEnv,
-        _thread: jni::jthread,
-        _object: jni::jobject,
-        _klass: jni::jclass,
-        _size: jni::jlong,
-    ) {
+    fn sampled_object_alloc(&self, _context: CallbackContext<'_>, _event: ObjectAllocationEvent) {
         self.sampled_allocs.fetch_add(1, Ordering::Relaxed);
     }
 
-    fn vm_death(&self, _jni: *mut jni::JNIEnv) {
+    fn vm_death(&self, _context: CallbackContext<'_>) {
         let count = self.sampled_allocs.load(Ordering::Relaxed);
         eprintln!("[heap] Sampled allocations: {}", count);
     }

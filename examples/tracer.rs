@@ -11,8 +11,8 @@ use jvmti_bindings::prelude::*;
 struct ClassTracer;
 
 impl Agent for ClassTracer {
-    fn on_load(&self, vm: *mut jni::JavaVM, _options: &str) -> jni::jint {
-        let jvmti = match Jvmti::new(vm) {
+    fn on_load(&self, context: AgentLoadContext<'_>) -> jni::jint {
+        let jvmti = match context.vm().jvmti() {
             Ok(env) => env,
             Err(e) => {
                 eprintln!("[tracer] Failed to get JVMTI: {:?}", e);
@@ -30,26 +30,19 @@ impl Agent for ClassTracer {
 
     fn class_file_load_hook(
         &self,
-        _jni: *mut jni::JNIEnv,
-        _class_being_redefined: jni::jclass,
-        _loader: jni::jobject,
-        name: *const std::os::raw::c_char,
-        _protection_domain: jni::jobject,
-        class_data_len: jni::jint,
-        _class_data: *const u8,
-        _new_class_data_len: *mut jni::jint,
-        _new_class_data: *mut *mut u8,
+        _context: CallbackContext<'_>,
+        event: ClassFileLoadHookEvent<'_>,
     ) {
-        let class_name = if name.is_null() {
-            "<unknown>".to_string()
-        } else {
-            unsafe { std::ffi::CStr::from_ptr(name) }
-                .to_str()
-                .unwrap_or("<invalid>")
-                .to_string()
-        };
+        let class_name = event
+            .name()
+            .and_then(|name| name.to_str().ok())
+            .unwrap_or("<unknown>");
 
-        eprintln!("[tracer] Loaded: {} ({} bytes)", class_name, class_data_len);
+        eprintln!(
+            "[tracer] Loaded: {} ({} bytes)",
+            class_name,
+            event.class_data().len()
+        );
     }
 }
 

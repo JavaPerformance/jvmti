@@ -47,10 +47,24 @@ unsafe extern "system" fn tag_all_objects_cb(
 /// Tags all objects in the heap with a unique tag (if currently 0).
 ///
 /// This is expensive and should be used for offline analysis, not in hot paths.
-pub fn tag_all_objects(jvmti_env: &Jvmti, start_tag: jni::jlong) -> Result<TagRange, jvmti::jvmtiError> {
-    let mut tagger = Tagger { next: start_tag, tagged: 0 };
+pub fn tag_all_objects(
+    jvmti_env: &Jvmti,
+    start_tag: jni::jlong,
+) -> Result<TagRange, jvmti::jvmtiError> {
+    let mut tagger = Tagger {
+        next: start_tag,
+        tagged: 0,
+    };
     let user_data = &mut tagger as *mut Tagger as *mut c_void;
-    jvmti_env.iterate_over_heap(jvmti::JVMTI_HEAP_OBJECT_EITHER, tag_all_objects_cb, user_data)?;
+    // The callback and user-data pointer remain valid for this synchronous call.
+    #[allow(deprecated)]
+    unsafe {
+        jvmti_env.iterate_over_heap(
+            jvmti::JVMTI_HEAP_OBJECT_EITHER,
+            tag_all_objects_cb,
+            user_data,
+        )?
+    };
     Ok(TagRange {
         start: start_tag,
         end: tagger.next,
@@ -64,19 +78,22 @@ struct EdgeCollector {
 
 unsafe extern "system" fn edge_collector_cb(
     _reference_kind: jni::jint,
-    _reference_info: jvmti::jvmtiObjectReferenceInfo,
+    _reference_info: *const jvmti::jvmtiHeapReferenceInfo,
     _class_tag: jni::jlong,
-    referrer_tag: jni::jlong,
-    target_tag: jni::jlong,
-    _reference_index: jni::jint,
+    _referrer_class_tag: jni::jlong,
+    _size: jni::jlong,
+    tag_ptr: *mut jni::jlong,
+    referrer_tag_ptr: *mut jni::jlong,
+    _length: jni::jint,
     user_data: *mut c_void,
-    _index_ptr: *mut jni::jint,
 ) -> jni::jint {
-    if user_data.is_null() {
+    if user_data.is_null() || tag_ptr.is_null() || referrer_tag_ptr.is_null() {
         return jvmti::JVMTI_ITERATION_CONTINUE;
     }
+    let target_tag = unsafe { *tag_ptr };
+    let referrer_tag = unsafe { *referrer_tag_ptr };
     if referrer_tag != 0 && target_tag != 0 {
-        let collector = &mut *(user_data as *mut EdgeCollector);
+        let collector = unsafe { &mut *(user_data as *mut EdgeCollector) };
         collector.edges.push((referrer_tag, target_tag));
     }
     jvmti::JVMTI_ITERATION_CONTINUE
@@ -86,17 +103,19 @@ unsafe extern "system" fn edge_collector_cb(
 ///
 /// Note: this only records edges for objects with non-zero tags.
 /// Call [`tag_all_objects`] first if you want full coverage.
-pub fn build_heap_graph(
+/// # Safety
+///
+/// `initial_object` must be null or a live reference belonging to the JVM TI
+/// environment for the full synchronous traversal.
+pub unsafe fn build_heap_graph(
     jvmti_env: &Jvmti,
     heap_filter: jni::jint,
     initial_object: jni::jobject,
 ) -> Result<HeapGraph, jvmti::jvmtiError> {
     let mut collector = EdgeCollector { edges: Vec::new() };
     let callbacks = jvmti::jvmtiHeapCallbacks {
-        heap_root_callback: None,
-        stack_reference_callback: None,
-        object_reference_callback: Some(edge_collector_cb),
-        object_callback: None,
+        heap_reference_callback: Some(edge_collector_cb),
+        ..Default::default()
     };
 
     jvmti_env.follow_references(
@@ -107,5 +126,7 @@ pub fn build_heap_graph(
         &mut collector as *mut EdgeCollector as *const c_void,
     )?;
 
-    Ok(HeapGraph { edges: collector.edges })
+    Ok(HeapGraph {
+        edges: collector.edges,
+    })
 }

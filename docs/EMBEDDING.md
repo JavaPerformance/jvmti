@@ -8,7 +8,7 @@ loading when `embed` is enabled.
 
 ```toml
 [dependencies]
-jvmti-bindings = { version = "2", features = ["embed"] }
+jvmti-bindings = { version = "3", features = ["embed"] }
 ```
 
 ## Minimal Example

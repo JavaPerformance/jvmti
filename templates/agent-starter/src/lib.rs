@@ -4,10 +4,13 @@ use jvmti_bindings::prelude::*;
 struct MyAgent;
 
 impl Agent for MyAgent {
-    fn on_load(&self, vm: *mut jni::JavaVM, options: &str) -> jni::jint {
-        eprintln!("[agent] on_load: {}", options);
+    fn on_load(&self, context: AgentLoadContext<'_>) -> jni::jint {
+        eprintln!(
+            "[agent] on_load: {}",
+            context.options_lossy().as_deref().unwrap_or("")
+        );
 
-        let jvmti = match Jvmti::new(vm) {
+        let jvmti = match context.vm().jvmti() {
             Ok(env) => env,
             Err(e) => {
                 eprintln!("[agent] Failed to get JVMTI: {:?}", e);

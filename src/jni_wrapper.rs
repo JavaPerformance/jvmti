@@ -42,10 +42,41 @@
 //! ```
 
 use crate::sys::jni;
+use crate::version::JniFeature;
 use std::ffi::{CStr, CString};
+use std::fmt;
 use std::marker::PhantomData;
 use std::ptr;
 use std::rc::Rc;
+
+// JNI tables grow by appending slots. Load only one pointer-sized field at a
+// time so a JDK 8 table is never viewed as the complete JDK 28 structure.
+macro_rules! jni_function {
+    ($env:expr, $field:ident) => {{
+        let table = $env.function_table_ptr();
+        $env.read_function_slot(std::ptr::addr_of!((*table).$field))
+    }};
+}
+
+/// A JNI operation is newer than the active JVM's native interface.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct JniVersionError {
+    pub feature: &'static str,
+    pub required: jni::jint,
+    pub actual: jni::jint,
+}
+
+impl fmt::Display for JniVersionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} requires JNI version {:#010x}, active JVM reports {:#010x}",
+            self.feature, self.required, self.actual
+        )
+    }
+}
+
+impl std::error::Error for JniVersionError {}
 
 /// Safe wrapper around a JNI environment pointer.
 ///
@@ -68,7 +99,10 @@ impl JniEnv {
     ///
     /// The caller must ensure the pointer is valid and comes from the current thread.
     pub unsafe fn from_raw(env: *mut jni::JNIEnv) -> Self {
-        JniEnv { env, _not_send_sync: PhantomData }
+        JniEnv {
+            env,
+            _not_send_sync: PhantomData,
+        }
     }
 
     /// Returns the raw JNI environment pointer.
@@ -76,13 +110,30 @@ impl JniEnv {
         self.env
     }
 
+    fn function_table_ptr(&self) -> *const jni::JNINativeInterface_ {
+        debug_assert!(!self.env.is_null());
+        let table = unsafe { *self.env };
+        debug_assert!(!table.is_null());
+        table
+    }
+
+    fn read_function_slot<F: Copy>(&self, slot: *const F) -> F {
+        // The raw constructor requires a valid environment. The caller macro
+        // forms `slot` from that checked contract and reads no adjacent bytes.
+        unsafe { slot.read() }
+    }
+
     /// Returns the JavaVM for this environment.
     pub fn get_java_vm(&self) -> Result<*mut jni::JavaVM, jni::jint> {
         let mut vm: *mut jni::JavaVM = ptr::null_mut();
         unsafe {
-            let vtable = *self.env;
-            let result = ((*vtable).GetJavaVM)(self.env, &mut vm);
-            if result == 0 { Ok(vm) } else { Err(result) }
+            let get_java_vm = jni_function!(self, GetJavaVM);
+            let result = get_java_vm(self.env, &mut vm);
+            if result == 0 {
+                Ok(vm)
+            } else {
+                Err(result)
+            }
         }
     }
 
@@ -93,8 +144,102 @@ impl JniEnv {
     /// Returns the JNI version.
     pub fn get_version(&self) -> jni::jint {
         unsafe {
-            let vtable = *self.env;
-            ((*vtable).GetVersion)(self.env)
+            let get_version = jni_function!(self, GetVersion);
+            get_version(self.env)
+        }
+    }
+
+    /// Returns whether the active JNI function table includes `required`.
+    pub fn supports_version(&self, required: jni::jint) -> bool {
+        self.get_version() >= required
+    }
+
+    /// Returns whether the active JNI table contains an additive feature.
+    pub fn supports_feature(&self, feature: JniFeature) -> bool {
+        self.supports_version(feature.required_version())
+    }
+
+    fn require_version(
+        &self,
+        feature: &'static str,
+        required: jni::jint,
+    ) -> Result<(), JniVersionError> {
+        let actual = self.get_version();
+        if actual >= required {
+            Ok(())
+        } else {
+            Err(JniVersionError {
+                feature,
+                required,
+                actual,
+            })
+        }
+    }
+
+    fn require_feature(&self, feature: JniFeature) -> Result<(), JniVersionError> {
+        self.require_version(feature.operation(), feature.required_version())
+    }
+
+    /// Return the module that defines `class` (JDK 9+).
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current
+    /// thread, and operation for the duration required by the JNI
+    /// specification.
+    pub unsafe fn get_module(&self, class: jni::jclass) -> Result<jni::jobject, JniVersionError> {
+        self.require_feature(JniFeature::Modules)?;
+        unsafe {
+            let get_module = jni_function!(self, GetModule);
+            Ok(get_module(self.env, class))
+        }
+    }
+
+    /// Report whether `object` is a virtual thread (JDK 19+).
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current
+    /// thread, and operation for the duration required by the JNI
+    /// specification.
+    pub unsafe fn is_virtual_thread(&self, object: jni::jobject) -> Result<bool, JniVersionError> {
+        self.require_feature(JniFeature::VirtualThreads)?;
+        unsafe {
+            let is_virtual_thread = jni_function!(self, IsVirtualThread);
+            Ok(is_virtual_thread(self.env, object) != jni::JNI_FALSE)
+        }
+    }
+
+    /// Return the modified UTF-8 byte length without the legacy `jsize` limit
+    /// (JDK 24+).
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current
+    /// thread, and operation for the duration required by the JNI
+    /// specification.
+    pub unsafe fn get_string_utf_length_as_long(
+        &self,
+        string: jni::jstring,
+    ) -> Result<jni::jlong, JniVersionError> {
+        self.require_feature(JniFeature::ModifiedUtf8LongLength)?;
+        unsafe {
+            let get_length = jni_function!(self, GetStringUTFLengthAsLong);
+            Ok(get_length(self.env, string))
+        }
+    }
+
+    /// Reports whether an object has identity under the JDK 28 value-object model.
+    ///
+    /// The appended JNI table slot is read only after `GetVersion` confirms that
+    /// the active table is from JDK 28 or newer.
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current
+    /// thread, and operation for the duration required by the JNI
+    /// specification.
+    pub unsafe fn has_identity(&self, object: jni::jobject) -> Result<bool, JniVersionError> {
+        self.require_feature(JniFeature::ValueObjectIdentity)?;
+        unsafe {
+            let has_identity = jni_function!(self, HasIdentity);
+            Ok(has_identity(self.env, object) != jni::JNI_FALSE)
         }
     }
 
@@ -110,7 +255,11 @@ impl JniEnv {
         unsafe {
             let vtable = *self.env;
             let cls = ((*vtable).FindClass)(self.env, c_name.as_ptr());
-            if cls.is_null() { None } else { Some(cls) }
+            if cls.is_null() {
+                None
+            } else {
+                Some(cls)
+            }
         }
     }
 
@@ -118,7 +267,15 @@ impl JniEnv {
     ///
     /// `name` must be the internal JVM class name, such as `com/example/Helper`.
     /// The returned class is a local reference and must be deleted by the caller.
-    pub fn define_class(&self, name: &str, loader: jni::jobject, bytes: &[u8]) -> Option<jni::jclass> {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn define_class(
+        &self,
+        name: &str,
+        loader: jni::jobject,
+        bytes: &[u8],
+    ) -> Option<jni::jclass> {
         if bytes.len() > jni::jsize::MAX as usize {
             return None;
         }
@@ -132,21 +289,35 @@ impl JniEnv {
                 bytes.as_ptr() as *const jni::jbyte,
                 bytes.len() as jni::jsize,
             );
-            if cls.is_null() { None } else { Some(cls) }
+            if cls.is_null() {
+                None
+            } else {
+                Some(cls)
+            }
         }
     }
 
     /// Gets the superclass of a class.
-    pub fn get_superclass(&self, cls: jni::jclass) -> Option<jni::jclass> {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn get_superclass(&self, cls: jni::jclass) -> Option<jni::jclass> {
         unsafe {
             let vtable = *self.env;
             let super_cls = ((*vtable).GetSuperclass)(self.env, cls);
-            if super_cls.is_null() { None } else { Some(super_cls) }
+            if super_cls.is_null() {
+                None
+            } else {
+                Some(super_cls)
+            }
         }
     }
 
     /// Checks if `cls1` can be assigned to `cls2`.
-    pub fn is_assignable_from(&self, cls1: jni::jclass, cls2: jni::jclass) -> bool {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn is_assignable_from(&self, cls1: jni::jclass, cls2: jni::jclass) -> bool {
         unsafe {
             let vtable = *self.env;
             ((*vtable).IsAssignableFrom)(self.env, cls1, cls2) != 0
@@ -154,7 +325,10 @@ impl JniEnv {
     }
 
     /// Gets the class of an object.
-    pub fn get_object_class(&self, obj: jni::jobject) -> jni::jclass {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn get_object_class(&self, obj: jni::jobject) -> jni::jclass {
         unsafe {
             let vtable = *self.env;
             ((*vtable).GetObjectClass)(self.env, obj)
@@ -162,7 +336,10 @@ impl JniEnv {
     }
 
     /// Checks if an object is an instance of a class.
-    pub fn is_instance_of(&self, obj: jni::jobject, cls: jni::jclass) -> bool {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn is_instance_of(&self, obj: jni::jobject, cls: jni::jclass) -> bool {
         unsafe {
             let vtable = *self.env;
             ((*vtable).IsInstanceOf)(self.env, obj, cls) != 0
@@ -178,18 +355,27 @@ impl JniEnv {
     /// A null return means either the parent is the bootstrap loader or the
     /// lookup/call failed. Check/clear pending exceptions if you need to
     /// distinguish those cases. The returned object is a local reference.
-    pub fn class_loader_parent(&self, loader: jni::jobject) -> Option<jni::jobject> {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn class_loader_parent(&self, loader: jni::jobject) -> Option<jni::jobject> {
         if loader.is_null() {
             return None;
         }
         let class_loader_class = self.find_class("java/lang/ClassLoader")?;
-        let Some(method) = self.get_method_id(class_loader_class, "getParent", "()Ljava/lang/ClassLoader;") else {
+        let Some(method) =
+            self.get_method_id(class_loader_class, "getParent", "()Ljava/lang/ClassLoader;")
+        else {
             self.delete_local_ref(class_loader_class);
             return None;
         };
         let parent = self.call_object_method(loader, method, &[]);
         self.delete_local_ref(class_loader_class);
-        if parent.is_null() { None } else { Some(parent) }
+        if parent.is_null() {
+            None
+        } else {
+            Some(parent)
+        }
     }
 
     /// Returns `ClassLoader.getSystemClassLoader()`.
@@ -197,25 +383,41 @@ impl JniEnv {
     /// The returned object is a local reference.
     pub fn system_class_loader(&self) -> Option<jni::jobject> {
         let class_loader_class = self.find_class("java/lang/ClassLoader")?;
-        let Some(method) = self.get_static_method_id(class_loader_class, "getSystemClassLoader", "()Ljava/lang/ClassLoader;") else {
+        // Every handle below was produced by this environment in this call.
+        let loader = unsafe {
+            let Some(method) = self.get_static_method_id(
+                class_loader_class,
+                "getSystemClassLoader",
+                "()Ljava/lang/ClassLoader;",
+            ) else {
+                self.delete_local_ref(class_loader_class);
+                return None;
+            };
+            let loader = self.call_static_object_method(class_loader_class, method, &[]);
             self.delete_local_ref(class_loader_class);
-            return None;
+            loader
         };
-        let loader = self.call_static_object_method(class_loader_class, method, &[]);
-        self.delete_local_ref(class_loader_class);
-        if loader.is_null() { None } else { Some(loader) }
+        if loader.is_null() {
+            None
+        } else {
+            Some(loader)
+        }
     }
 
     /// Returns `Module.getName()`.
     ///
     /// Unnamed modules return `None`. The helper also returns `None` if the
     /// reflection lookup/call fails.
-    pub fn module_name(&self, module: jni::jobject) -> Option<String> {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn module_name(&self, module: jni::jobject) -> Option<String> {
         if module.is_null() {
             return None;
         }
         let module_class = self.get_object_class(module);
-        let Some(method) = self.get_method_id(module_class, "getName", "()Ljava/lang/String;") else {
+        let Some(method) = self.get_method_id(module_class, "getName", "()Ljava/lang/String;")
+        else {
             self.delete_local_ref(module_class);
             return None;
         };
@@ -230,12 +432,16 @@ impl JniEnv {
     }
 
     /// Returns `Module.getPackages()` as dotted Java package names.
-    pub fn module_packages(&self, module: jni::jobject) -> Option<Vec<String>> {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn module_packages(&self, module: jni::jobject) -> Option<Vec<String>> {
         if module.is_null() {
             return None;
         }
         let module_class = self.get_object_class(module);
-        let Some(method) = self.get_method_id(module_class, "getPackages", "()Ljava/util/Set;") else {
+        let Some(method) = self.get_method_id(module_class, "getPackages", "()Ljava/util/Set;")
+        else {
             self.delete_local_ref(module_class);
             return None;
         };
@@ -245,7 +451,8 @@ impl JniEnv {
             return Some(Vec::new());
         }
         let set_class = self.get_object_class(package_set);
-        let Some(to_array) = self.get_method_id(set_class, "toArray", "()[Ljava/lang/Object;") else {
+        let Some(to_array) = self.get_method_id(set_class, "toArray", "()[Ljava/lang/Object;")
+        else {
             self.delete_local_ref(set_class);
             self.delete_local_ref(package_set);
             return None;
@@ -275,27 +482,40 @@ impl JniEnv {
     ///
     /// A null return means the module is associated with the bootstrap loader or
     /// the lookup/call failed. The returned object is a local reference.
-    pub fn module_class_loader(&self, module: jni::jobject) -> Option<jni::jobject> {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn module_class_loader(&self, module: jni::jobject) -> Option<jni::jobject> {
         if module.is_null() {
             return None;
         }
         let module_class = self.get_object_class(module);
-        let Some(method) = self.get_method_id(module_class, "getClassLoader", "()Ljava/lang/ClassLoader;") else {
+        let Some(method) =
+            self.get_method_id(module_class, "getClassLoader", "()Ljava/lang/ClassLoader;")
+        else {
             self.delete_local_ref(module_class);
             return None;
         };
         let loader = self.call_object_method(module, method, &[]);
         self.delete_local_ref(module_class);
-        if loader.is_null() { None } else { Some(loader) }
+        if loader.is_null() {
+            None
+        } else {
+            Some(loader)
+        }
     }
 
     /// Returns `Module.canRead(other)`.
-    pub fn module_can_read(&self, module: jni::jobject, other: jni::jobject) -> bool {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn module_can_read(&self, module: jni::jobject, other: jni::jobject) -> bool {
         if module.is_null() || other.is_null() {
             return false;
         }
         let module_class = self.get_object_class(module);
-        let Some(method) = self.get_method_id(module_class, "canRead", "(Ljava/lang/Module;)Z") else {
+        let Some(method) = self.get_method_id(module_class, "canRead", "(Ljava/lang/Module;)Z")
+        else {
             self.delete_local_ref(module_class);
             return false;
         };
@@ -308,23 +528,49 @@ impl JniEnv {
     /// Returns `Module.isExported(package_name, other)`.
     ///
     /// `package_name` must use dotted Java package syntax.
-    pub fn module_is_exported_to(&self, module: jni::jobject, package_name: &str, other: jni::jobject) -> bool {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn module_is_exported_to(
+        &self,
+        module: jni::jobject,
+        package_name: &str,
+        other: jni::jobject,
+    ) -> bool {
         self.module_package_access(module, package_name, other, "isExported")
     }
 
     /// Returns `Module.isOpen(package_name, other)`.
     ///
     /// `package_name` must use dotted Java package syntax.
-    pub fn module_is_open_to(&self, module: jni::jobject, package_name: &str, other: jni::jobject) -> bool {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn module_is_open_to(
+        &self,
+        module: jni::jobject,
+        package_name: &str,
+        other: jni::jobject,
+    ) -> bool {
         self.module_package_access(module, package_name, other, "isOpen")
     }
 
-    fn module_package_access(&self, module: jni::jobject, package_name: &str, other: jni::jobject, method_name: &str) -> bool {
+    unsafe fn module_package_access(
+        &self,
+        module: jni::jobject,
+        package_name: &str,
+        other: jni::jobject,
+        method_name: &str,
+    ) -> bool {
         if module.is_null() || other.is_null() {
             return false;
         }
         let module_class = self.get_object_class(module);
-        let Some(method) = self.get_method_id(module_class, method_name, "(Ljava/lang/String;Ljava/lang/Module;)Z") else {
+        let Some(method) = self.get_method_id(
+            module_class,
+            method_name,
+            "(Ljava/lang/String;Ljava/lang/Module;)Z",
+        ) else {
             self.delete_local_ref(module_class);
             return false;
         };
@@ -372,26 +618,44 @@ impl JniEnv {
         unsafe {
             let vtable = *self.env;
             let exc = ((*vtable).ExceptionOccurred)(self.env);
-            if exc.is_null() { None } else { Some(exc) }
+            if exc.is_null() {
+                None
+            } else {
+                Some(exc)
+            }
         }
     }
 
     /// Throws an exception.
-    pub fn throw(&self, obj: jni::jthrowable) -> Result<(), jni::jint> {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn throw(&self, obj: jni::jthrowable) -> Result<(), jni::jint> {
         unsafe {
             let vtable = *self.env;
             let result = ((*vtable).Throw)(self.env, obj);
-            if result == 0 { Ok(()) } else { Err(result) }
+            if result == 0 {
+                Ok(())
+            } else {
+                Err(result)
+            }
         }
     }
 
     /// Throws a new exception of the specified class with the given message.
-    pub fn throw_new(&self, cls: jni::jclass, msg: &str) -> Result<(), jni::jint> {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn throw_new(&self, cls: jni::jclass, msg: &str) -> Result<(), jni::jint> {
         let c_msg = CString::new(msg).map_err(|_| -1)?;
         unsafe {
             let vtable = *self.env;
             let result = ((*vtable).ThrowNew)(self.env, cls, c_msg.as_ptr());
-            if result == 0 { Ok(()) } else { Err(result) }
+            if result == 0 {
+                Ok(())
+            } else {
+                Err(result)
+            }
         }
     }
 
@@ -405,7 +669,11 @@ impl JniEnv {
         unsafe {
             let vtable = *self.env;
             let jstr = ((*vtable).NewStringUTF)(self.env, c_str.as_ptr());
-            if jstr.is_null() { None } else { Some(jstr) }
+            if jstr.is_null() {
+                None
+            } else {
+                Some(jstr)
+            }
         }
     }
 
@@ -415,7 +683,11 @@ impl JniEnv {
         unsafe {
             let vtable = *self.env;
             let jstr = ((*vtable).NewString)(self.env, utf16.as_ptr(), utf16.len() as jni::jsize);
-            if jstr.is_null() { None } else { Some(jstr) }
+            if jstr.is_null() {
+                None
+            } else {
+                Some(jstr)
+            }
         }
     }
 
@@ -424,7 +696,10 @@ impl JniEnv {
     /// Returns `None` if the string is null or contains invalid modified UTF-8.
     /// For full-fidelity Unicode (including embedded nulls), use
     /// [`Self::get_string`].
-    pub fn get_string_utf(&self, s: jni::jstring) -> Option<String> {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn get_string_utf(&self, s: jni::jstring) -> Option<String> {
         if s.is_null() {
             return None;
         }
@@ -443,7 +718,10 @@ impl JniEnv {
     /// Gets a Rust string from a Java string using UTF-16.
     ///
     /// Returns `None` if the string is null.
-    pub fn get_string(&self, s: jni::jstring) -> Option<String> {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn get_string(&self, s: jni::jstring) -> Option<String> {
         if s.is_null() {
             return None;
         }
@@ -462,7 +740,10 @@ impl JniEnv {
     }
 
     /// Gets the UTF-8 length of a Java string.
-    pub fn get_string_utf_length(&self, s: jni::jstring) -> jni::jsize {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn get_string_utf_length(&self, s: jni::jstring) -> jni::jsize {
         unsafe {
             let vtable = *self.env;
             ((*vtable).GetStringUTFLength)(self.env, s)
@@ -470,7 +751,10 @@ impl JniEnv {
     }
 
     /// Gets the length of a Java string (in UTF-16 code units).
-    pub fn get_string_length(&self, s: jni::jstring) -> jni::jsize {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn get_string_length(&self, s: jni::jstring) -> jni::jsize {
         unsafe {
             let vtable = *self.env;
             ((*vtable).GetStringLength)(self.env, s)
@@ -482,24 +766,48 @@ impl JniEnv {
     // =========================================================================
 
     /// Gets the method ID for an instance method.
-    pub fn get_method_id(&self, cls: jni::jclass, name: &str, sig: &str) -> Option<jni::jmethodID> {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn get_method_id(
+        &self,
+        cls: jni::jclass,
+        name: &str,
+        sig: &str,
+    ) -> Option<jni::jmethodID> {
         let c_name = CString::new(name).ok()?;
         let c_sig = CString::new(sig).ok()?;
         unsafe {
             let vtable = *self.env;
             let mid = ((*vtable).GetMethodID)(self.env, cls, c_name.as_ptr(), c_sig.as_ptr());
-            if mid.is_null() { None } else { Some(mid) }
+            if mid.is_null() {
+                None
+            } else {
+                Some(mid)
+            }
         }
     }
 
     /// Gets the method ID for a static method.
-    pub fn get_static_method_id(&self, cls: jni::jclass, name: &str, sig: &str) -> Option<jni::jmethodID> {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn get_static_method_id(
+        &self,
+        cls: jni::jclass,
+        name: &str,
+        sig: &str,
+    ) -> Option<jni::jmethodID> {
         let c_name = CString::new(name).ok()?;
         let c_sig = CString::new(sig).ok()?;
         unsafe {
             let vtable = *self.env;
             let mid = ((*vtable).GetStaticMethodID)(self.env, cls, c_name.as_ptr(), c_sig.as_ptr());
-            if mid.is_null() { None } else { Some(mid) }
+            if mid.is_null() {
+                None
+            } else {
+                Some(mid)
+            }
         }
     }
 
@@ -508,24 +816,48 @@ impl JniEnv {
     // =========================================================================
 
     /// Gets the field ID for an instance field.
-    pub fn get_field_id(&self, cls: jni::jclass, name: &str, sig: &str) -> Option<jni::jfieldID> {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn get_field_id(
+        &self,
+        cls: jni::jclass,
+        name: &str,
+        sig: &str,
+    ) -> Option<jni::jfieldID> {
         let c_name = CString::new(name).ok()?;
         let c_sig = CString::new(sig).ok()?;
         unsafe {
             let vtable = *self.env;
             let fid = ((*vtable).GetFieldID)(self.env, cls, c_name.as_ptr(), c_sig.as_ptr());
-            if fid.is_null() { None } else { Some(fid) }
+            if fid.is_null() {
+                None
+            } else {
+                Some(fid)
+            }
         }
     }
 
     /// Gets the field ID for a static field.
-    pub fn get_static_field_id(&self, cls: jni::jclass, name: &str, sig: &str) -> Option<jni::jfieldID> {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn get_static_field_id(
+        &self,
+        cls: jni::jclass,
+        name: &str,
+        sig: &str,
+    ) -> Option<jni::jfieldID> {
         let c_name = CString::new(name).ok()?;
         let c_sig = CString::new(sig).ok()?;
         unsafe {
             let vtable = *self.env;
             let fid = ((*vtable).GetStaticFieldID)(self.env, cls, c_name.as_ptr(), c_sig.as_ptr());
-            if fid.is_null() { None } else { Some(fid) }
+            if fid.is_null() {
+                None
+            } else {
+                Some(fid)
+            }
         }
     }
 
@@ -534,25 +866,47 @@ impl JniEnv {
     // =========================================================================
 
     /// Allocates a new object without calling any constructor.
-    pub fn alloc_object(&self, cls: jni::jclass) -> Option<jni::jobject> {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn alloc_object(&self, cls: jni::jclass) -> Option<jni::jobject> {
         unsafe {
             let vtable = *self.env;
             let obj = ((*vtable).AllocObject)(self.env, cls);
-            if obj.is_null() { None } else { Some(obj) }
+            if obj.is_null() {
+                None
+            } else {
+                Some(obj)
+            }
         }
     }
 
     /// Creates a new object by calling the specified constructor.
-    pub fn new_object(&self, cls: jni::jclass, method_id: jni::jmethodID, args: &[jni::jvalue]) -> Option<jni::jobject> {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn new_object(
+        &self,
+        cls: jni::jclass,
+        method_id: jni::jmethodID,
+        args: &[jni::jvalue],
+    ) -> Option<jni::jobject> {
         unsafe {
             let vtable = *self.env;
             let obj = ((*vtable).NewObjectA)(self.env, cls, method_id, args.as_ptr());
-            if obj.is_null() { None } else { Some(obj) }
+            if obj.is_null() {
+                None
+            } else {
+                Some(obj)
+            }
         }
     }
 
     /// Checks if two references refer to the same object.
-    pub fn is_same_object(&self, ref1: jni::jobject, ref2: jni::jobject) -> bool {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn is_same_object(&self, ref1: jni::jobject, ref2: jni::jobject) -> bool {
         unsafe {
             let vtable = *self.env;
             ((*vtable).IsSameObject)(self.env, ref1, ref2) != 0
@@ -566,7 +920,10 @@ impl JniEnv {
     /// Creates a new global reference to an object.
     ///
     /// Global references must be explicitly deleted with `delete_global_ref`.
-    pub fn new_global_ref(&self, obj: jni::jobject) -> jni::jobject {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn new_global_ref(&self, obj: jni::jobject) -> jni::jobject {
         unsafe {
             let vtable = *self.env;
             ((*vtable).NewGlobalRef)(self.env, obj)
@@ -574,7 +931,10 @@ impl JniEnv {
     }
 
     /// Deletes a global reference.
-    pub fn delete_global_ref(&self, obj: jni::jobject) {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn delete_global_ref(&self, obj: jni::jobject) {
         unsafe {
             let vtable = *self.env;
             ((*vtable).DeleteGlobalRef)(self.env, obj);
@@ -582,7 +942,10 @@ impl JniEnv {
     }
 
     /// Creates a new local reference to an object.
-    pub fn new_local_ref(&self, obj: jni::jobject) -> jni::jobject {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn new_local_ref(&self, obj: jni::jobject) -> jni::jobject {
         unsafe {
             let vtable = *self.env;
             ((*vtable).NewLocalRef)(self.env, obj)
@@ -590,7 +953,10 @@ impl JniEnv {
     }
 
     /// Deletes a local reference.
-    pub fn delete_local_ref(&self, obj: jni::jobject) {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn delete_local_ref(&self, obj: jni::jobject) {
         unsafe {
             let vtable = *self.env;
             ((*vtable).DeleteLocalRef)(self.env, obj);
@@ -598,7 +964,10 @@ impl JniEnv {
     }
 
     /// Creates a new weak global reference.
-    pub fn new_weak_global_ref(&self, obj: jni::jobject) -> jni::jweak {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn new_weak_global_ref(&self, obj: jni::jobject) -> jni::jweak {
         unsafe {
             let vtable = *self.env;
             ((*vtable).NewWeakGlobalRef)(self.env, obj)
@@ -606,7 +975,10 @@ impl JniEnv {
     }
 
     /// Deletes a weak global reference.
-    pub fn delete_weak_global_ref(&self, obj: jni::jweak) {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn delete_weak_global_ref(&self, obj: jni::jweak) {
         unsafe {
             let vtable = *self.env;
             ((*vtable).DeleteWeakGlobalRef)(self.env, obj);
@@ -618,7 +990,11 @@ impl JniEnv {
         unsafe {
             let vtable = *self.env;
             let result = ((*vtable).EnsureLocalCapacity)(self.env, capacity);
-            if result == 0 { Ok(()) } else { Err(result) }
+            if result == 0 {
+                Ok(())
+            } else {
+                Err(result)
+            }
         }
     }
 
@@ -627,12 +1003,19 @@ impl JniEnv {
         unsafe {
             let vtable = *self.env;
             let result = ((*vtable).PushLocalFrame)(self.env, capacity);
-            if result == 0 { Ok(()) } else { Err(result) }
+            if result == 0 {
+                Ok(())
+            } else {
+                Err(result)
+            }
         }
     }
 
     /// Pops the current local reference frame, returning a reference in the previous frame.
-    pub fn pop_local_frame(&self, result: jni::jobject) -> jni::jobject {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn pop_local_frame(&self, result: jni::jobject) -> jni::jobject {
         unsafe {
             let vtable = *self.env;
             ((*vtable).PopLocalFrame)(self.env, result)
@@ -644,7 +1027,10 @@ impl JniEnv {
     // =========================================================================
 
     /// Gets the length of an array.
-    pub fn get_array_length(&self, array: jni::jarray) -> jni::jsize {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn get_array_length(&self, array: jni::jarray) -> jni::jsize {
         unsafe {
             let vtable = *self.env;
             ((*vtable).GetArrayLength)(self.env, array)
@@ -652,16 +1038,35 @@ impl JniEnv {
     }
 
     /// Creates a new object array.
-    pub fn new_object_array(&self, length: jni::jsize, cls: jni::jclass, init: jni::jobject) -> Option<jni::jobjectArray> {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn new_object_array(
+        &self,
+        length: jni::jsize,
+        cls: jni::jclass,
+        init: jni::jobject,
+    ) -> Option<jni::jobjectArray> {
         unsafe {
             let vtable = *self.env;
             let arr = ((*vtable).NewObjectArray)(self.env, length, cls, init);
-            if arr.is_null() { None } else { Some(arr) }
+            if arr.is_null() {
+                None
+            } else {
+                Some(arr)
+            }
         }
     }
 
     /// Gets an element from an object array.
-    pub fn get_object_array_element(&self, array: jni::jobjectArray, index: jni::jsize) -> jni::jobject {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn get_object_array_element(
+        &self,
+        array: jni::jobjectArray,
+        index: jni::jsize,
+    ) -> jni::jobject {
         unsafe {
             let vtable = *self.env;
             ((*vtable).GetObjectArrayElement)(self.env, array, index)
@@ -669,7 +1074,15 @@ impl JniEnv {
     }
 
     /// Sets an element in an object array.
-    pub fn set_object_array_element(&self, array: jni::jobjectArray, index: jni::jsize, value: jni::jobject) {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn set_object_array_element(
+        &self,
+        array: jni::jobjectArray,
+        index: jni::jsize,
+        value: jni::jobject,
+    ) {
         unsafe {
             let vtable = *self.env;
             ((*vtable).SetObjectArrayElement)(self.env, array, index, value);
@@ -681,12 +1094,25 @@ impl JniEnv {
         unsafe {
             let vtable = *self.env;
             let arr = ((*vtable).NewByteArray)(self.env, length);
-            if arr.is_null() { None } else { Some(arr) }
+            if arr.is_null() {
+                None
+            } else {
+                Some(arr)
+            }
         }
     }
 
     /// Gets a region of a byte array.
-    pub fn get_byte_array_region(&self, array: jni::jbyteArray, start: jni::jsize, len: jni::jsize, buf: &mut [jni::jbyte]) {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn get_byte_array_region(
+        &self,
+        array: jni::jbyteArray,
+        start: jni::jsize,
+        len: jni::jsize,
+        buf: &mut [jni::jbyte],
+    ) {
         unsafe {
             let vtable = *self.env;
             ((*vtable).GetByteArrayRegion)(self.env, array, start, len, buf.as_mut_ptr());
@@ -694,7 +1120,16 @@ impl JniEnv {
     }
 
     /// Sets a region of a byte array.
-    pub fn set_byte_array_region(&self, array: jni::jbyteArray, start: jni::jsize, len: jni::jsize, buf: &[jni::jbyte]) {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn set_byte_array_region(
+        &self,
+        array: jni::jbyteArray,
+        start: jni::jsize,
+        len: jni::jsize,
+        buf: &[jni::jbyte],
+    ) {
         unsafe {
             let vtable = *self.env;
             ((*vtable).SetByteArrayRegion)(self.env, array, start, len, buf.as_ptr());
@@ -706,12 +1141,25 @@ impl JniEnv {
         unsafe {
             let vtable = *self.env;
             let arr = ((*vtable).NewIntArray)(self.env, length);
-            if arr.is_null() { None } else { Some(arr) }
+            if arr.is_null() {
+                None
+            } else {
+                Some(arr)
+            }
         }
     }
 
     /// Gets a region of an int array.
-    pub fn get_int_array_region(&self, array: jni::jintArray, start: jni::jsize, len: jni::jsize, buf: &mut [jni::jint]) {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn get_int_array_region(
+        &self,
+        array: jni::jintArray,
+        start: jni::jsize,
+        len: jni::jsize,
+        buf: &mut [jni::jint],
+    ) {
         unsafe {
             let vtable = *self.env;
             ((*vtable).GetIntArrayRegion)(self.env, array, start, len, buf.as_mut_ptr());
@@ -719,7 +1167,16 @@ impl JniEnv {
     }
 
     /// Sets a region of an int array.
-    pub fn set_int_array_region(&self, array: jni::jintArray, start: jni::jsize, len: jni::jsize, buf: &[jni::jint]) {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn set_int_array_region(
+        &self,
+        array: jni::jintArray,
+        start: jni::jsize,
+        len: jni::jsize,
+        buf: &[jni::jint],
+    ) {
         unsafe {
             let vtable = *self.env;
             ((*vtable).SetIntArrayRegion)(self.env, array, start, len, buf.as_ptr());
@@ -731,12 +1188,25 @@ impl JniEnv {
         unsafe {
             let vtable = *self.env;
             let arr = ((*vtable).NewLongArray)(self.env, length);
-            if arr.is_null() { None } else { Some(arr) }
+            if arr.is_null() {
+                None
+            } else {
+                Some(arr)
+            }
         }
     }
 
     /// Gets a region of a long array.
-    pub fn get_long_array_region(&self, array: jni::jlongArray, start: jni::jsize, len: jni::jsize, buf: &mut [jni::jlong]) {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn get_long_array_region(
+        &self,
+        array: jni::jlongArray,
+        start: jni::jsize,
+        len: jni::jsize,
+        buf: &mut [jni::jlong],
+    ) {
         unsafe {
             let vtable = *self.env;
             ((*vtable).GetLongArrayRegion)(self.env, array, start, len, buf.as_mut_ptr());
@@ -744,7 +1214,16 @@ impl JniEnv {
     }
 
     /// Sets a region of a long array.
-    pub fn set_long_array_region(&self, array: jni::jlongArray, start: jni::jsize, len: jni::jsize, buf: &[jni::jlong]) {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn set_long_array_region(
+        &self,
+        array: jni::jlongArray,
+        start: jni::jsize,
+        len: jni::jsize,
+        buf: &[jni::jlong],
+    ) {
         unsafe {
             let vtable = *self.env;
             ((*vtable).SetLongArrayRegion)(self.env, array, start, len, buf.as_ptr());
@@ -756,7 +1235,15 @@ impl JniEnv {
     // =========================================================================
 
     /// Calls a void instance method.
-    pub fn call_void_method(&self, obj: jni::jobject, method_id: jni::jmethodID, args: &[jni::jvalue]) {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn call_void_method(
+        &self,
+        obj: jni::jobject,
+        method_id: jni::jmethodID,
+        args: &[jni::jvalue],
+    ) {
         unsafe {
             let vtable = *self.env;
             ((*vtable).CallVoidMethodA)(self.env, obj, method_id, args.as_ptr());
@@ -764,7 +1251,15 @@ impl JniEnv {
     }
 
     /// Calls an int instance method.
-    pub fn call_int_method(&self, obj: jni::jobject, method_id: jni::jmethodID, args: &[jni::jvalue]) -> jni::jint {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn call_int_method(
+        &self,
+        obj: jni::jobject,
+        method_id: jni::jmethodID,
+        args: &[jni::jvalue],
+    ) -> jni::jint {
         unsafe {
             let vtable = *self.env;
             ((*vtable).CallIntMethodA)(self.env, obj, method_id, args.as_ptr())
@@ -772,7 +1267,15 @@ impl JniEnv {
     }
 
     /// Calls a long instance method.
-    pub fn call_long_method(&self, obj: jni::jobject, method_id: jni::jmethodID, args: &[jni::jvalue]) -> jni::jlong {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn call_long_method(
+        &self,
+        obj: jni::jobject,
+        method_id: jni::jmethodID,
+        args: &[jni::jvalue],
+    ) -> jni::jlong {
         unsafe {
             let vtable = *self.env;
             ((*vtable).CallLongMethodA)(self.env, obj, method_id, args.as_ptr())
@@ -780,7 +1283,15 @@ impl JniEnv {
     }
 
     /// Calls a boolean instance method.
-    pub fn call_boolean_method(&self, obj: jni::jobject, method_id: jni::jmethodID, args: &[jni::jvalue]) -> bool {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn call_boolean_method(
+        &self,
+        obj: jni::jobject,
+        method_id: jni::jmethodID,
+        args: &[jni::jvalue],
+    ) -> bool {
         unsafe {
             let vtable = *self.env;
             ((*vtable).CallBooleanMethodA)(self.env, obj, method_id, args.as_ptr()) != 0
@@ -788,7 +1299,15 @@ impl JniEnv {
     }
 
     /// Calls an object instance method.
-    pub fn call_object_method(&self, obj: jni::jobject, method_id: jni::jmethodID, args: &[jni::jvalue]) -> jni::jobject {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn call_object_method(
+        &self,
+        obj: jni::jobject,
+        method_id: jni::jmethodID,
+        args: &[jni::jvalue],
+    ) -> jni::jobject {
         unsafe {
             let vtable = *self.env;
             ((*vtable).CallObjectMethodA)(self.env, obj, method_id, args.as_ptr())
@@ -796,7 +1315,15 @@ impl JniEnv {
     }
 
     /// Calls a void static method.
-    pub fn call_static_void_method(&self, cls: jni::jclass, method_id: jni::jmethodID, args: &[jni::jvalue]) {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn call_static_void_method(
+        &self,
+        cls: jni::jclass,
+        method_id: jni::jmethodID,
+        args: &[jni::jvalue],
+    ) {
         unsafe {
             let vtable = *self.env;
             ((*vtable).CallStaticVoidMethodA)(self.env, cls, method_id, args.as_ptr());
@@ -804,7 +1331,15 @@ impl JniEnv {
     }
 
     /// Calls an int static method.
-    pub fn call_static_int_method(&self, cls: jni::jclass, method_id: jni::jmethodID, args: &[jni::jvalue]) -> jni::jint {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn call_static_int_method(
+        &self,
+        cls: jni::jclass,
+        method_id: jni::jmethodID,
+        args: &[jni::jvalue],
+    ) -> jni::jint {
         unsafe {
             let vtable = *self.env;
             ((*vtable).CallStaticIntMethodA)(self.env, cls, method_id, args.as_ptr())
@@ -812,7 +1347,15 @@ impl JniEnv {
     }
 
     /// Calls an object static method.
-    pub fn call_static_object_method(&self, cls: jni::jclass, method_id: jni::jmethodID, args: &[jni::jvalue]) -> jni::jobject {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn call_static_object_method(
+        &self,
+        cls: jni::jclass,
+        method_id: jni::jmethodID,
+        args: &[jni::jvalue],
+    ) -> jni::jobject {
         unsafe {
             let vtable = *self.env;
             ((*vtable).CallStaticObjectMethodA)(self.env, cls, method_id, args.as_ptr())
@@ -824,7 +1367,14 @@ impl JniEnv {
     // =========================================================================
 
     /// Gets an object instance field.
-    pub fn get_object_field(&self, obj: jni::jobject, field_id: jni::jfieldID) -> jni::jobject {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn get_object_field(
+        &self,
+        obj: jni::jobject,
+        field_id: jni::jfieldID,
+    ) -> jni::jobject {
         unsafe {
             let vtable = *self.env;
             ((*vtable).GetObjectField)(self.env, obj, field_id)
@@ -832,7 +1382,10 @@ impl JniEnv {
     }
 
     /// Gets an int instance field.
-    pub fn get_int_field(&self, obj: jni::jobject, field_id: jni::jfieldID) -> jni::jint {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn get_int_field(&self, obj: jni::jobject, field_id: jni::jfieldID) -> jni::jint {
         unsafe {
             let vtable = *self.env;
             ((*vtable).GetIntField)(self.env, obj, field_id)
@@ -840,7 +1393,10 @@ impl JniEnv {
     }
 
     /// Gets a long instance field.
-    pub fn get_long_field(&self, obj: jni::jobject, field_id: jni::jfieldID) -> jni::jlong {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn get_long_field(&self, obj: jni::jobject, field_id: jni::jfieldID) -> jni::jlong {
         unsafe {
             let vtable = *self.env;
             ((*vtable).GetLongField)(self.env, obj, field_id)
@@ -848,7 +1404,18 @@ impl JniEnv {
     }
 
     /// Sets an object instance field.
-    pub fn set_object_field(&self, obj: jni::jobject, field_id: jni::jfieldID, value: jni::jobject) {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current
+    /// thread, and operation. `field_id` must not designate a final field:
+    /// mutating final fields through JNI is undefined and is increasingly
+    /// rejected by newer Java releases.
+    pub unsafe fn set_object_field(
+        &self,
+        obj: jni::jobject,
+        field_id: jni::jfieldID,
+        value: jni::jobject,
+    ) {
         unsafe {
             let vtable = *self.env;
             ((*vtable).SetObjectField)(self.env, obj, field_id, value);
@@ -856,7 +1423,18 @@ impl JniEnv {
     }
 
     /// Sets an int instance field.
-    pub fn set_int_field(&self, obj: jni::jobject, field_id: jni::jfieldID, value: jni::jint) {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current
+    /// thread, and operation. `field_id` must not designate a final field:
+    /// mutating final fields through JNI is undefined and is increasingly
+    /// rejected by newer Java releases.
+    pub unsafe fn set_int_field(
+        &self,
+        obj: jni::jobject,
+        field_id: jni::jfieldID,
+        value: jni::jint,
+    ) {
         unsafe {
             let vtable = *self.env;
             ((*vtable).SetIntField)(self.env, obj, field_id, value);
@@ -864,7 +1442,18 @@ impl JniEnv {
     }
 
     /// Sets a long instance field.
-    pub fn set_long_field(&self, obj: jni::jobject, field_id: jni::jfieldID, value: jni::jlong) {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current
+    /// thread, and operation. `field_id` must not designate a final field:
+    /// mutating final fields through JNI is undefined and is increasingly
+    /// rejected by newer Java releases.
+    pub unsafe fn set_long_field(
+        &self,
+        obj: jni::jobject,
+        field_id: jni::jfieldID,
+        value: jni::jlong,
+    ) {
         unsafe {
             let vtable = *self.env;
             ((*vtable).SetLongField)(self.env, obj, field_id, value);
@@ -872,7 +1461,14 @@ impl JniEnv {
     }
 
     /// Gets a static object field.
-    pub fn get_static_object_field(&self, cls: jni::jclass, field_id: jni::jfieldID) -> jni::jobject {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn get_static_object_field(
+        &self,
+        cls: jni::jclass,
+        field_id: jni::jfieldID,
+    ) -> jni::jobject {
         unsafe {
             let vtable = *self.env;
             ((*vtable).GetStaticObjectField)(self.env, cls, field_id)
@@ -880,7 +1476,14 @@ impl JniEnv {
     }
 
     /// Gets a static int field.
-    pub fn get_static_int_field(&self, cls: jni::jclass, field_id: jni::jfieldID) -> jni::jint {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn get_static_int_field(
+        &self,
+        cls: jni::jclass,
+        field_id: jni::jfieldID,
+    ) -> jni::jint {
         unsafe {
             let vtable = *self.env;
             ((*vtable).GetStaticIntField)(self.env, cls, field_id)
@@ -888,7 +1491,18 @@ impl JniEnv {
     }
 
     /// Sets a static object field.
-    pub fn set_static_object_field(&self, cls: jni::jclass, field_id: jni::jfieldID, value: jni::jobject) {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current
+    /// thread, and operation. `field_id` must not designate a final field:
+    /// mutating final fields through JNI is undefined and is increasingly
+    /// rejected by newer Java releases.
+    pub unsafe fn set_static_object_field(
+        &self,
+        cls: jni::jclass,
+        field_id: jni::jfieldID,
+        value: jni::jobject,
+    ) {
         unsafe {
             let vtable = *self.env;
             ((*vtable).SetStaticObjectField)(self.env, cls, field_id, value);
@@ -900,20 +1514,34 @@ impl JniEnv {
     // =========================================================================
 
     /// Enters the monitor associated with an object.
-    pub fn monitor_enter(&self, obj: jni::jobject) -> Result<(), jni::jint> {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn monitor_enter(&self, obj: jni::jobject) -> Result<(), jni::jint> {
         unsafe {
             let vtable = *self.env;
             let result = ((*vtable).MonitorEnter)(self.env, obj);
-            if result == 0 { Ok(()) } else { Err(result) }
+            if result == 0 {
+                Ok(())
+            } else {
+                Err(result)
+            }
         }
     }
 
     /// Exits the monitor associated with an object.
-    pub fn monitor_exit(&self, obj: jni::jobject) -> Result<(), jni::jint> {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn monitor_exit(&self, obj: jni::jobject) -> Result<(), jni::jint> {
         unsafe {
             let vtable = *self.env;
             let result = ((*vtable).MonitorExit)(self.env, obj);
-            if result == 0 { Ok(()) } else { Err(result) }
+            if result == 0 {
+                Ok(())
+            } else {
+                Err(result)
+            }
         }
     }
 
@@ -922,20 +1550,43 @@ impl JniEnv {
     // =========================================================================
 
     /// Registers native methods for a class.
-    pub fn register_natives(&self, cls: jni::jclass, methods: &[jni::JNINativeMethod]) -> Result<(), jni::jint> {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn register_natives(
+        &self,
+        cls: jni::jclass,
+        methods: &[jni::JNINativeMethod],
+    ) -> Result<(), jni::jint> {
         unsafe {
             let vtable = *self.env;
-            let result = ((*vtable).RegisterNatives)(self.env, cls, methods.as_ptr(), methods.len() as jni::jint);
-            if result == 0 { Ok(()) } else { Err(result) }
+            let result = ((*vtable).RegisterNatives)(
+                self.env,
+                cls,
+                methods.as_ptr(),
+                methods.len() as jni::jint,
+            );
+            if result == 0 {
+                Ok(())
+            } else {
+                Err(result)
+            }
         }
     }
 
     /// Unregisters all native methods for a class.
-    pub fn unregister_natives(&self, cls: jni::jclass) -> Result<(), jni::jint> {
+    /// # Safety
+    ///
+    /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
+    pub unsafe fn unregister_natives(&self, cls: jni::jclass) -> Result<(), jni::jint> {
         unsafe {
             let vtable = *self.env;
             let result = ((*vtable).UnregisterNatives)(self.env, cls);
-            if result == 0 { Ok(()) } else { Err(result) }
+            if result == 0 {
+                Ok(())
+            } else {
+                Err(result)
+            }
         }
     }
 }
@@ -949,7 +1600,8 @@ impl JniEnv {
 /// # Example
 ///
 /// ```rust,ignore
-/// let class = LocalRef::new(&env, env.find_class("java/lang/String").unwrap());
+/// let raw_class = env.find_class("java/lang/String").unwrap();
+/// let class = unsafe { LocalRef::from_raw(&env, raw_class) };
 /// // class is automatically deleted when it goes out of scope
 /// ```
 pub struct LocalRef<'a> {
@@ -958,8 +1610,13 @@ pub struct LocalRef<'a> {
 }
 
 impl<'a> LocalRef<'a> {
-    /// Creates a new LocalRef guard.
-    pub fn new(env: &'a JniEnv, obj: jni::jobject) -> Self {
+    /// Takes ownership of an existing JNI local reference.
+    ///
+    /// # Safety
+    ///
+    /// `obj` must be null or a live local reference owned by the current JNI
+    /// frame and thread. No other owner may delete it after this call.
+    pub unsafe fn from_raw(env: &'a JniEnv, obj: jni::jobject) -> Self {
         LocalRef { env, obj }
     }
 
@@ -979,7 +1636,8 @@ impl<'a> LocalRef<'a> {
 impl<'a> Drop for LocalRef<'a> {
     fn drop(&mut self) {
         if !self.obj.is_null() {
-            self.env.delete_local_ref(self.obj);
+            // LocalRef's unsafe constructor established this ownership.
+            unsafe { self.env.delete_local_ref(self.obj) };
         }
     }
 }
@@ -989,7 +1647,9 @@ impl<'a> Drop for LocalRef<'a> {
 /// # Example
 ///
 /// ```rust,ignore
-/// let global_class = GlobalRef::new(&env, env.find_class("java/lang/String").unwrap());
+/// let raw_class = env.find_class("java/lang/String").unwrap();
+/// let local_class = unsafe { LocalRef::from_raw(&env, raw_class) };
+/// let global_class = unsafe { GlobalRef::new(&env, local_class.get()) };
 /// // global_class can be used across JNI calls
 /// // it's automatically deleted when dropped
 /// ```
@@ -1004,10 +1664,14 @@ impl GlobalRef {
     ///
     /// # Safety
     ///
-    /// The caller must ensure the env pointer remains valid for the lifetime of this GlobalRef,
-    /// or that cleanup is handled manually.
+    /// `local_obj` must be null or a live reference belonging to the same VM as
+    /// `env` and valid on the current JNI thread. The VM must remain alive until
+    /// this guard is dropped, and no other owner may delete the global reference
+    /// created by this call.
     pub unsafe fn new(env: &JniEnv, local_obj: jni::jobject) -> Self {
-        let global = env.new_global_ref(local_obj);
+        // SAFETY: the constructor's contract establishes the raw reference
+        // invariants required by NewGlobalRef.
+        let global = unsafe { env.new_global_ref(local_obj) };
         let vm = env.get_java_vm().unwrap_or(ptr::null_mut());
         GlobalRef {
             vm,

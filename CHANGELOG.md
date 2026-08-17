@@ -1,5 +1,37 @@
 # Changelog
 
+## 3.0.0
+
+### Breaking changes
+1. Replaced reduced callbacks and parallel `*_with_jvmti` callbacks with one canonical callback per event: `CallbackContext` plus a complete typed event payload.
+2. Replaced raw lifecycle arguments with `AgentLoadContext` and `AgentUnloadContext`; option bytes are preserved exactly and UTF-8 decoding is explicit.
+3. Changed `Jvmti::new` to accept a trusted callback-scoped `JavaVmRef`; arbitrary raw VM construction is now explicitly unsafe.
+4. Changed `Jvmti::allocate` to return `JvmtiAllocation`; raw allocation/deallocation is explicitly unsafe.
+5. Changed `Jvmti::dispose_environment` to consume the wrapper and `get_jni_function_table` to return an owned allocation.
+6. Replaced safe `LocalRef::new` adoption of arbitrary raw references with unsafe `LocalRef::from_raw`, and made `GlobalRef::new` unsafe because it consumes a caller-supplied local reference.
+7. Marked JNI and JVM TI wrapper operations that depend on caller-supplied raw-handle invariants as `unsafe`. The exhaustive method inventory is in `docs/MIGRATING_2_TO_3.md`.
+8. Corrected public raw `sys::jvmti` declarations whose 2.x representation or ABI was wrong, including the open `jvmtiError` domain, modern and legacy heap callbacks, timer and stack layouts, extension callbacks, `jvmtiStartFunction`, variadic event notification, virtual-thread exception lists, and JNI table indirection.
+9. Changed `suspend_all_virtual_threads` and `resume_all_virtual_threads` to accept an exception-thread slice and corrected `run_agent_thread` to use the three-argument native callback.
+10. Changed `set_global_agent` to return the typed `GlobalAgentAlreadySet` error instead of `()`.
+11. Renamed raw `jvmtiExtensionParamInfo` to the header-defined `jvmtiParamInfo`, replaced `jvmtiObjectCallback` with the corrected legacy `jvmtiHeapObjectCallback`, and replaced the incorrect object-reference metadata family with `jvmtiHeapReferenceInfo`.
+12. Changed `ExtensionFunctionInfo::func` from an untyped pointer to `Option<jvmtiExtensionFunction>` so vendor-defined variadic calls cannot be mistaken for an ordinary safe function.
+
+See [Migrating From 2.x to 3.0](docs/MIGRATING_2_TO_3.md) for the callback-by-callback table and complete source migration inventory.
+
+### Added
+1. Complete callback payloads for all 34 standard non-reserved JVM TI events, including JIT maps, return values, field values, resource data, and mutable outputs.
+2. Runtime-gated JNI additions through the pinned current JDK 28 source snapshot: modules, virtual threads, long modified-UTF length, and preview value-object identity.
+3. Runtime-gated JVM TI additions through the pinned current JDK 28 source snapshot: modules, heap sampling, virtual threads, `ClearAllFramePops`, and preview value-object capability semantics.
+4. Exact C/Rust ABI probes against every OpenJDK feature release from 8 through current JDK 28 headers.
+5. Panic containment at lifecycle and event FFI boundaries.
+6. A JDK 29 acceptance gate that requires official source rather than inferring support from JDK 28 main line.
+
+### Fixed
+1. Corrected raw timer, stack, heap-reference, extension, callback, JNI indirection, and function-table declarations to match upstream headers.
+2. Corrected versioned table access and capability-bit use so older JVMs are rejected before newer slots or bits are touched.
+3. Corrected signed native count handling and JVM TI allocation ownership.
+4. Narrowed optional archive dependencies and pinned the embedding loader to versions that preserve the declared Rust 1.70 MSRV with all features enabled.
+
 ## 2.3.0
 
 ### Added

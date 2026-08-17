@@ -3,7 +3,7 @@
 // Complete JNI (Java Native Interface) bindings for Rust.
 // No external dependencies - suitable for standalone use.
 //
-// Verified against JDK 27 jni.h header. Compatible with JDK 8+.
+// ABI-verified against OpenJDK 8 through current JDK 28 headers.
 //
 // The JNI interface has been remarkably stable since JDK 1.6.
 // Newer JDKs add functions at the END of the vtable, maintaining
@@ -11,6 +11,7 @@
 //   - JDK 9:  GetModule (index 233)
 //   - JDK 19: IsVirtualThread (index 234)
 //   - JDK 24: GetStringUTFLengthAsLong (index 235)
+//   - JDK 28: HasIdentity (index 236, preview value-object support)
 
 #![allow(non_upper_case_globals)]
 #![allow(non_camel_case_types)]
@@ -137,6 +138,7 @@ pub const JNI_VERSION_19: jint = 0x00130000;
 pub const JNI_VERSION_20: jint = 0x00140000;
 pub const JNI_VERSION_21: jint = 0x00150000;
 pub const JNI_VERSION_24: jint = 0x00180000;
+pub const JNI_VERSION_28: jint = 0x001C0000;
 
 // =============================================================================
 // jobjectRefType enum (JNI 1.6+)
@@ -166,16 +168,10 @@ pub struct JNINativeMethod {
 // JVMTI Alloc/Dealloc function types (used in agent code)
 // =============================================================================
 
-pub type JvmtiAllocFn = unsafe extern "system" fn(
-    env: *mut jvmtiEnv,
-    size: jlong,
-    mem_ptr: *mut *mut u8,
-) -> jvmtiError;
+pub type JvmtiAllocFn =
+    unsafe extern "system" fn(env: *mut jvmtiEnv, size: jlong, mem_ptr: *mut *mut u8) -> jvmtiError;
 
-pub type JvmtiDeallocFn = unsafe extern "system" fn(
-    env: *mut jvmtiEnv,
-    mem: *mut u8,
-) -> jvmtiError;
+pub type JvmtiDeallocFn = unsafe extern "system" fn(env: *mut jvmtiEnv, mem: *mut u8) -> jvmtiError;
 
 // =============================================================================
 // va_list placeholder
@@ -191,7 +187,7 @@ pub type va_list = *mut c_void;
 // =============================================================================
 //
 // This is the heart of JNI. JNIEnv is a pointer to a pointer to this struct.
-// 236 function pointers total (4 reserved + 232 functions).
+// 237 pointer slots total in the JDK 28 table (4 reserved + 233 functions).
 // Order must exactly match the JDK header!
 
 #[repr(C)]
@@ -218,8 +214,7 @@ pub struct JNINativeInterface_ {
     // 7-9: Reflection
     pub FromReflectedMethod:
         unsafe extern "system" fn(env: *mut JNIEnv, method: jobject) -> jmethodID,
-    pub FromReflectedField:
-        unsafe extern "system" fn(env: *mut JNIEnv, field: jobject) -> jfieldID,
+    pub FromReflectedField: unsafe extern "system" fn(env: *mut JNIEnv, field: jobject) -> jfieldID,
     pub ToReflectedMethod: unsafe extern "system" fn(
         env: *mut JNIEnv,
         cls: jclass,
@@ -264,8 +259,7 @@ pub struct JNINativeInterface_ {
 
     // 27-30: Object creation
     pub AllocObject: unsafe extern "system" fn(env: *mut JNIEnv, clazz: jclass) -> jobject,
-    pub NewObject:
-        *mut c_void /* variadic - use NewObjectA instead */,
+    pub NewObject: *mut c_void, /* variadic - use NewObjectA instead */
     pub NewObjectV: unsafe extern "system" fn(
         env: *mut JNIEnv,
         clazz: jclass,
@@ -294,8 +288,7 @@ pub struct JNINativeInterface_ {
 
     // 34-63: Call<Type>Method variants (Object, Boolean, Byte, Char, Short, Int, Long, Float, Double, Void)
     // Each type has 3 variants: varargs, V (va_list), A (jvalue array)
-    pub CallObjectMethod:
-        *mut c_void /* variadic - use CallObjectMethodA instead */,
+    pub CallObjectMethod: *mut c_void, /* variadic - use CallObjectMethodA instead */
     pub CallObjectMethodV: unsafe extern "system" fn(
         env: *mut JNIEnv,
         obj: jobject,
@@ -309,8 +302,7 @@ pub struct JNINativeInterface_ {
         args: *const jvalue,
     ) -> jobject,
 
-    pub CallBooleanMethod:
-        *mut c_void /* variadic - use CallBooleanMethodA instead */,
+    pub CallBooleanMethod: *mut c_void, /* variadic - use CallBooleanMethodA instead */
     pub CallBooleanMethodV: unsafe extern "system" fn(
         env: *mut JNIEnv,
         obj: jobject,
@@ -324,8 +316,7 @@ pub struct JNINativeInterface_ {
         args: *const jvalue,
     ) -> jboolean,
 
-    pub CallByteMethod:
-        *mut c_void /* variadic - use CallByteMethodA instead */,
+    pub CallByteMethod: *mut c_void, /* variadic - use CallByteMethodA instead */
     pub CallByteMethodV: unsafe extern "system" fn(
         env: *mut JNIEnv,
         obj: jobject,
@@ -339,8 +330,7 @@ pub struct JNINativeInterface_ {
         args: *const jvalue,
     ) -> jbyte,
 
-    pub CallCharMethod:
-        *mut c_void /* variadic - use CallCharMethodA instead */,
+    pub CallCharMethod: *mut c_void, /* variadic - use CallCharMethodA instead */
     pub CallCharMethodV: unsafe extern "system" fn(
         env: *mut JNIEnv,
         obj: jobject,
@@ -354,8 +344,7 @@ pub struct JNINativeInterface_ {
         args: *const jvalue,
     ) -> jchar,
 
-    pub CallShortMethod:
-        *mut c_void /* variadic - use CallShortMethodA instead */,
+    pub CallShortMethod: *mut c_void, /* variadic - use CallShortMethodA instead */
     pub CallShortMethodV: unsafe extern "system" fn(
         env: *mut JNIEnv,
         obj: jobject,
@@ -369,8 +358,7 @@ pub struct JNINativeInterface_ {
         args: *const jvalue,
     ) -> jshort,
 
-    pub CallIntMethod:
-        *mut c_void /* variadic - use CallIntMethodA instead */,
+    pub CallIntMethod: *mut c_void, /* variadic - use CallIntMethodA instead */
     pub CallIntMethodV: unsafe extern "system" fn(
         env: *mut JNIEnv,
         obj: jobject,
@@ -384,8 +372,7 @@ pub struct JNINativeInterface_ {
         args: *const jvalue,
     ) -> jint,
 
-    pub CallLongMethod:
-        *mut c_void /* variadic - use CallLongMethodA instead */,
+    pub CallLongMethod: *mut c_void, /* variadic - use CallLongMethodA instead */
     pub CallLongMethodV: unsafe extern "system" fn(
         env: *mut JNIEnv,
         obj: jobject,
@@ -399,8 +386,7 @@ pub struct JNINativeInterface_ {
         args: *const jvalue,
     ) -> jlong,
 
-    pub CallFloatMethod:
-        *mut c_void /* variadic - use CallFloatMethodA instead */,
+    pub CallFloatMethod: *mut c_void, /* variadic - use CallFloatMethodA instead */
     pub CallFloatMethodV: unsafe extern "system" fn(
         env: *mut JNIEnv,
         obj: jobject,
@@ -414,8 +400,7 @@ pub struct JNINativeInterface_ {
         args: *const jvalue,
     ) -> jfloat,
 
-    pub CallDoubleMethod:
-        *mut c_void /* variadic - use CallDoubleMethodA instead */,
+    pub CallDoubleMethod: *mut c_void, /* variadic - use CallDoubleMethodA instead */
     pub CallDoubleMethodV: unsafe extern "system" fn(
         env: *mut JNIEnv,
         obj: jobject,
@@ -429,8 +414,7 @@ pub struct JNINativeInterface_ {
         args: *const jvalue,
     ) -> jdouble,
 
-    pub CallVoidMethod:
-        *mut c_void /* variadic - use CallVoidMethodA instead */,
+    pub CallVoidMethod: *mut c_void, /* variadic - use CallVoidMethodA instead */
     pub CallVoidMethodV: unsafe extern "system" fn(
         env: *mut JNIEnv,
         obj: jobject,
@@ -662,8 +646,7 @@ pub struct JNINativeInterface_ {
     ) -> jmethodID,
 
     // 114-143: CallStatic<Type>Method variants
-    pub CallStaticObjectMethod:
-        *mut c_void /* variadic - use NewObjectA instead */,
+    pub CallStaticObjectMethod: *mut c_void, /* variadic - use NewObjectA instead */
     pub CallStaticObjectMethodV: unsafe extern "system" fn(
         env: *mut JNIEnv,
         clazz: jclass,
@@ -677,8 +660,7 @@ pub struct JNINativeInterface_ {
         args: *const jvalue,
     ) -> jobject,
 
-    pub CallStaticBooleanMethod:
-        *mut c_void /* variadic - use CallStaticBooleanMethodA */,
+    pub CallStaticBooleanMethod: *mut c_void, /* variadic - use CallStaticBooleanMethodA */
     pub CallStaticBooleanMethodV: unsafe extern "system" fn(
         env: *mut JNIEnv,
         clazz: jclass,
@@ -692,8 +674,7 @@ pub struct JNINativeInterface_ {
         args: *const jvalue,
     ) -> jboolean,
 
-    pub CallStaticByteMethod:
-        *mut c_void /* variadic - use CallStaticByteMethodA */,
+    pub CallStaticByteMethod: *mut c_void, /* variadic - use CallStaticByteMethodA */
     pub CallStaticByteMethodV: unsafe extern "system" fn(
         env: *mut JNIEnv,
         clazz: jclass,
@@ -707,8 +688,7 @@ pub struct JNINativeInterface_ {
         args: *const jvalue,
     ) -> jbyte,
 
-    pub CallStaticCharMethod:
-        *mut c_void /* variadic - use CallStaticCharMethodA */,
+    pub CallStaticCharMethod: *mut c_void, /* variadic - use CallStaticCharMethodA */
     pub CallStaticCharMethodV: unsafe extern "system" fn(
         env: *mut JNIEnv,
         clazz: jclass,
@@ -722,8 +702,7 @@ pub struct JNINativeInterface_ {
         args: *const jvalue,
     ) -> jchar,
 
-    pub CallStaticShortMethod:
-        *mut c_void /* variadic - use CallStaticShortMethodA */,
+    pub CallStaticShortMethod: *mut c_void, /* variadic - use CallStaticShortMethodA */
     pub CallStaticShortMethodV: unsafe extern "system" fn(
         env: *mut JNIEnv,
         clazz: jclass,
@@ -737,8 +716,7 @@ pub struct JNINativeInterface_ {
         args: *const jvalue,
     ) -> jshort,
 
-    pub CallStaticIntMethod:
-        *mut c_void /* variadic - use CallStaticIntMethodA */,
+    pub CallStaticIntMethod: *mut c_void, /* variadic - use CallStaticIntMethodA */
     pub CallStaticIntMethodV: unsafe extern "system" fn(
         env: *mut JNIEnv,
         clazz: jclass,
@@ -752,8 +730,7 @@ pub struct JNINativeInterface_ {
         args: *const jvalue,
     ) -> jint,
 
-    pub CallStaticLongMethod:
-        *mut c_void /* variadic - use CallStaticLongMethodA */,
+    pub CallStaticLongMethod: *mut c_void, /* variadic - use CallStaticLongMethodA */
     pub CallStaticLongMethodV: unsafe extern "system" fn(
         env: *mut JNIEnv,
         clazz: jclass,
@@ -767,8 +744,7 @@ pub struct JNINativeInterface_ {
         args: *const jvalue,
     ) -> jlong,
 
-    pub CallStaticFloatMethod:
-        *mut c_void /* variadic - use CallStaticFloatMethodA */,
+    pub CallStaticFloatMethod: *mut c_void, /* variadic - use CallStaticFloatMethodA */
     pub CallStaticFloatMethodV: unsafe extern "system" fn(
         env: *mut JNIEnv,
         clazz: jclass,
@@ -782,8 +758,7 @@ pub struct JNINativeInterface_ {
         args: *const jvalue,
     ) -> jfloat,
 
-    pub CallStaticDoubleMethod:
-        *mut c_void /* variadic - use CallStaticDoubleMethodA */,
+    pub CallStaticDoubleMethod: *mut c_void, /* variadic - use CallStaticDoubleMethodA */
     pub CallStaticDoubleMethodV: unsafe extern "system" fn(
         env: *mut JNIEnv,
         clazz: jclass,
@@ -797,8 +772,7 @@ pub struct JNINativeInterface_ {
         args: *const jvalue,
     ) -> jdouble,
 
-    pub CallStaticVoidMethod:
-        *mut c_void /* variadic - use CallStaticVoidMethodA */,
+    pub CallStaticVoidMethod: *mut c_void, /* variadic - use CallStaticVoidMethodA */
     pub CallStaticVoidMethodV: unsafe extern "system" fn(
         env: *mut JNIEnv,
         cls: jclass,
@@ -841,24 +815,44 @@ pub struct JNINativeInterface_ {
         unsafe extern "system" fn(env: *mut JNIEnv, clazz: jclass, fieldID: jfieldID) -> jdouble,
 
     // 154-162: SetStatic<Type>Field
-    pub SetStaticObjectField:
-        unsafe extern "system" fn(env: *mut JNIEnv, clazz: jclass, fieldID: jfieldID, value: jobject),
-    pub SetStaticBooleanField:
-        unsafe extern "system" fn(env: *mut JNIEnv, clazz: jclass, fieldID: jfieldID, value: jboolean),
+    pub SetStaticObjectField: unsafe extern "system" fn(
+        env: *mut JNIEnv,
+        clazz: jclass,
+        fieldID: jfieldID,
+        value: jobject,
+    ),
+    pub SetStaticBooleanField: unsafe extern "system" fn(
+        env: *mut JNIEnv,
+        clazz: jclass,
+        fieldID: jfieldID,
+        value: jboolean,
+    ),
     pub SetStaticByteField:
         unsafe extern "system" fn(env: *mut JNIEnv, clazz: jclass, fieldID: jfieldID, value: jbyte),
     pub SetStaticCharField:
         unsafe extern "system" fn(env: *mut JNIEnv, clazz: jclass, fieldID: jfieldID, value: jchar),
-    pub SetStaticShortField:
-        unsafe extern "system" fn(env: *mut JNIEnv, clazz: jclass, fieldID: jfieldID, value: jshort),
+    pub SetStaticShortField: unsafe extern "system" fn(
+        env: *mut JNIEnv,
+        clazz: jclass,
+        fieldID: jfieldID,
+        value: jshort,
+    ),
     pub SetStaticIntField:
         unsafe extern "system" fn(env: *mut JNIEnv, clazz: jclass, fieldID: jfieldID, value: jint),
     pub SetStaticLongField:
         unsafe extern "system" fn(env: *mut JNIEnv, clazz: jclass, fieldID: jfieldID, value: jlong),
-    pub SetStaticFloatField:
-        unsafe extern "system" fn(env: *mut JNIEnv, clazz: jclass, fieldID: jfieldID, value: jfloat),
-    pub SetStaticDoubleField:
-        unsafe extern "system" fn(env: *mut JNIEnv, clazz: jclass, fieldID: jfieldID, value: jdouble),
+    pub SetStaticFloatField: unsafe extern "system" fn(
+        env: *mut JNIEnv,
+        clazz: jclass,
+        fieldID: jfieldID,
+        value: jfloat,
+    ),
+    pub SetStaticDoubleField: unsafe extern "system" fn(
+        env: *mut JNIEnv,
+        clazz: jclass,
+        fieldID: jfieldID,
+        value: jdouble,
+    ),
 
     // 163-166: String operations
     pub NewString:
@@ -903,8 +897,7 @@ pub struct JNINativeInterface_ {
     ),
 
     // 175-182: New<Type>Array
-    pub NewBooleanArray:
-        unsafe extern "system" fn(env: *mut JNIEnv, len: jsize) -> jbooleanArray,
+    pub NewBooleanArray: unsafe extern "system" fn(env: *mut JNIEnv, len: jsize) -> jbooleanArray,
     pub NewByteArray: unsafe extern "system" fn(env: *mut JNIEnv, len: jsize) -> jbyteArray,
     pub NewCharArray: unsafe extern "system" fn(env: *mut JNIEnv, len: jsize) -> jcharArray,
     pub NewShortArray: unsafe extern "system" fn(env: *mut JNIEnv, len: jsize) -> jshortArray,
@@ -980,12 +973,8 @@ pub struct JNINativeInterface_ {
         elems: *mut jshort,
         mode: jint,
     ),
-    pub ReleaseIntArrayElements: unsafe extern "system" fn(
-        env: *mut JNIEnv,
-        array: jintArray,
-        elems: *mut jint,
-        mode: jint,
-    ),
+    pub ReleaseIntArrayElements:
+        unsafe extern "system" fn(env: *mut JNIEnv, array: jintArray, elems: *mut jint, mode: jint),
     pub ReleaseLongArrayElements: unsafe extern "system" fn(
         env: *mut JNIEnv,
         array: jlongArray,
@@ -1179,8 +1168,11 @@ pub struct JNINativeInterface_ {
     pub ExceptionCheck: unsafe extern "system" fn(env: *mut JNIEnv) -> jboolean,
 
     // 229-231: Direct buffer support (JNI 1.4)
-    pub NewDirectByteBuffer:
-        unsafe extern "system" fn(env: *mut JNIEnv, address: *mut c_void, capacity: jlong) -> jobject,
+    pub NewDirectByteBuffer: unsafe extern "system" fn(
+        env: *mut JNIEnv,
+        address: *mut c_void,
+        capacity: jlong,
+    ) -> jobject,
     pub GetDirectBufferAddress:
         unsafe extern "system" fn(env: *mut JNIEnv, buf: jobject) -> *mut c_void,
     pub GetDirectBufferCapacity: unsafe extern "system" fn(env: *mut JNIEnv, buf: jobject) -> jlong,
@@ -1196,7 +1188,11 @@ pub struct JNINativeInterface_ {
     pub IsVirtualThread: unsafe extern "system" fn(env: *mut JNIEnv, obj: jobject) -> jboolean,
 
     // 235: String UTF length as long (JNI 24/25)
-    pub GetStringUTFLengthAsLong: unsafe extern "system" fn(env: *mut JNIEnv, str: jstring) -> jlong,
+    pub GetStringUTFLengthAsLong:
+        unsafe extern "system" fn(env: *mut JNIEnv, str: jstring) -> jlong,
+
+    // 236: Value classes (JDK 28+ preview)
+    pub HasIdentity: unsafe extern "system" fn(env: *mut JNIEnv, obj: jobject) -> jboolean,
 }
 
 // =============================================================================
@@ -1224,13 +1220,19 @@ pub struct JNIInvokeInterface_ {
     pub reserved2: *mut c_void,
 
     pub DestroyJavaVM: unsafe extern "system" fn(vm: *mut JavaVM) -> jint,
-    pub AttachCurrentThread:
-        unsafe extern "system" fn(vm: *mut JavaVM, penv: *mut *mut c_void, args: *mut c_void) -> jint,
+    pub AttachCurrentThread: unsafe extern "system" fn(
+        vm: *mut JavaVM,
+        penv: *mut *mut c_void,
+        args: *mut c_void,
+    ) -> jint,
     pub DetachCurrentThread: unsafe extern "system" fn(vm: *mut JavaVM) -> jint,
     pub GetEnv:
         unsafe extern "system" fn(vm: *mut JavaVM, penv: *mut *mut c_void, version: jint) -> jint,
-    pub AttachCurrentThreadAsDaemon:
-        unsafe extern "system" fn(vm: *mut JavaVM, penv: *mut *mut c_void, args: *mut c_void) -> jint,
+    pub AttachCurrentThreadAsDaemon: unsafe extern "system" fn(
+        vm: *mut JavaVM,
+        penv: *mut *mut c_void,
+        args: *mut c_void,
+    ) -> jint,
 }
 
 // =============================================================================
@@ -1282,11 +1284,8 @@ pub type JNI_CreateJavaVM = unsafe extern "system" fn(
     args: *mut JavaVMInitArgs,
 ) -> jint;
 
-pub type JNI_GetCreatedJavaVMs = unsafe extern "system" fn(
-    vm_buf: *mut *mut JavaVM,
-    buf_len: jsize,
-    n_vms: *mut jsize,
-) -> jint;
+pub type JNI_GetCreatedJavaVMs =
+    unsafe extern "system" fn(vm_buf: *mut *mut JavaVM, buf_len: jsize, n_vms: *mut jsize) -> jint;
 
 // =============================================================================
 // Helper macros and functions

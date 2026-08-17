@@ -17,7 +17,7 @@ It is intended for serious native JVM tooling, not just experimentation.
 ## Scope boundary
 
 This crate is a **generic JNI/JVMTI binding and agent framework** (published on
-crates.io — current release **2.3.0**). Bytecode instrumentation engines, spec
+crates.io; this branch is the **3.0.0** candidate). Bytecode instrumentation engines, spec
 transforms, stackmap-aware BCI, and related policy live in the separate
 `bytecode-instrument` project. Do not add that instrumentation technology here
 unless there is an explicit decision to merge or port it. Agents can depend on
@@ -48,7 +48,7 @@ If you only need JNI to call into Java from Rust applications, crates like `jni`
 
 1. Full JNI + JVMTI coverage (agent-first focus)
 2. Safe, owned return types in the high-level `env` wrappers
-3. Class file parsing with all standard Java 8-27 attributes
+3. Class file parsing with all standard Java 8-27 attributes and opaque preservation of unknown attributes
 4. A tiny but explicit public surface (`env`, `sys`, `classfile`, `prelude`)
 5. Safety guidance, pitfalls, and compatibility documentation
 6. Examples that mirror real JVMTI tooling patterns
@@ -70,10 +70,10 @@ Java agents (`java.lang.instrument`) are simpler but can't access low-level feat
 | Goal | How |
 |------|-----|
 | **Explicit safety model** | Unsafe operations centralized; APIs return `Result` |
-| **Complete surface** | All 236 JNI + 156 JVMTI functions, mapped to Rust types |
+| **Complete surface** | Complete JDK 28 JNI and JVM TI tables, mapped to Rust types |
 | **Agent-first ergonomics** | Structured callbacks, capability management, RAII resources |
 | **No hidden dependencies** | No bindgen, no build-time JVM, no global allocators; optional helper deps are feature-gated |
-| **Long-term compatibility** | Verified against OpenJDK headers, JDK 8 through 27 |
+| **Long-term compatibility** | ABI-verified against OpenJDK headers, JDK 8 through current JDK 28 |
 
 ## Safety and FFI
 
@@ -99,14 +99,14 @@ Details: `docs/PUBLIC_API.md`.
 If you need raw JNI/JVMTI functions, use:
 1. `jvmti_bindings::sys::jni` and `jvmti_bindings::sys::jvmti` for raw types and vtables.
 2. `JniEnv::raw()` and `Jvmti::raw()` to access the underlying raw pointers.
-3. `Agent::*_with_jvmti` callback variants when a callback needs the exact `jvmtiEnv*` supplied by the JVM.
+3. `CallbackContext` for the exact callback-scoped `jvmtiEnv*` and optional thread-local `JNIEnv*` supplied by the JVM.
 
 ## Attach and Threading Rules
 
 1. `Agent_OnAttach` is supported via the `export_agent!` macro and `Agent::on_attach`.
 2. `JNIEnv` is thread-local and must only be used on its originating thread.
 3. `GlobalRef` cleanup attaches to the JVM when needed, but you should still manage lifetimes explicitly.
-4. For bytecode transforms and live metadata collection, prefer `class_file_load_hook_with_jvmti`, `vm_init_with_jvmti`, or the other `*_with_jvmti` methods over rediscovering JVMTI from `JavaVM`.
+4. Callback payloads are complete and canonical; use `context.jvmti()` and `context.jni()` instead of rediscovering environments from `JavaVM`.
 
 ## ClassLoader and JPMS Helpers
 
@@ -122,7 +122,7 @@ helper deployment, and compatibility planning remain outside this crate.
 
 ## Compatibility
 
-See `docs/COMPATIBILITY.md` for a full JDK 8-27 matrix.
+See `docs/COMPATIBILITY.md` for the full JDK 8-28 matrix and the JDK 29 acceptance gate.
 
 The event callback ABI has dedicated offset tests and a live multi-JDK agent
 proof. Run `cargo test --test jvmti_event_abi` for the portable checks or
@@ -138,7 +138,7 @@ Enable with:
 
 ```toml
 [dependencies]
-jvmti-bindings = { version = "2", features = ["heap-graph"] }
+jvmti-bindings = { version = "3", features = ["heap-graph"] }
 ```
 
 ## Quick Start
@@ -157,7 +157,7 @@ cd my_agent
 crate-type = ["cdylib"]
 
 [dependencies]
-jvmti-bindings = "2"
+jvmti-bindings = "3"
 ```
 
 ### 3. Implement your agent
@@ -169,16 +169,16 @@ use jvmti_bindings::prelude::*;
 struct MyAgent;
 
 impl Agent for MyAgent {
-    fn on_load(&self, vm: *mut jni::JavaVM, options: &str) -> jni::jint {
-        println!("[MyAgent] Loaded with options: {}", options);
+    fn on_load(&self, context: AgentLoadContext<'_>) -> jni::jint {
+        println!("[MyAgent] Loaded with options: {:?}", context.options_lossy());
         jni::JNI_OK
     }
 
-    fn vm_init(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread) {
+    fn vm_init(&self, _context: CallbackContext<'_>, _event: ThreadEvent) {
         println!("[MyAgent] VM initialized");
     }
 
-    fn vm_death(&self, _jni: *mut jni::JNIEnv) {
+    fn vm_death(&self, _context: CallbackContext<'_>) {
         println!("[MyAgent] VM shutting down");
     }
 }
@@ -212,9 +212,9 @@ use jvmti_bindings::prelude::*;
 struct AttachLogger;
 
 impl Agent for AttachLogger {
-    fn on_attach(&self, vm: *mut jni::JavaVM, options: &str) -> jni::jint {
-        println!("[AttachLogger] attached with options: {}", options);
-        let _jvmti = Jvmti::new(vm).expect("get JVMTI");
+    fn on_attach(&self, context: AgentLoadContext<'_>) -> jni::jint {
+        println!("[AttachLogger] attached with options: {:?}", context.options_lossy());
+        let _jvmti = context.vm().jvmti().expect("get JVMTI");
         jni::JNI_OK
     }
 }
@@ -343,32 +343,19 @@ The macro generates the native entry points the JVM expects.
 - Register callbacks or enable events
 - Prevent JVM crashes from invalid JVMTI usage
 
-For callbacks that need the raw JVMTI callback environment, implement the
-corresponding `*_with_jvmti` method, for example `vm_init_with_jvmti` or
-`class_file_load_hook_with_jvmti`. JIT event handlers can use
-`compiled_method_load_with_jvmti`, `compiled_method_unload_with_jvmti`, and
-`dynamic_code_generated_with_jvmti`; the original callback methods remain
-available for implementations that do not need the environment.
-
-For example, a compiled-method callback can wrap the callback-scoped pointer
-and query method metadata directly:
+Every event has one canonical callback. `CallbackContext` carries the exact
+callback-scoped JVM TI environment and, only where the JVM supplies one, the
+thread-local JNI environment. The event value carries the complete native
+payload. For example:
 
 ```rust,ignore
-fn compiled_method_load_with_jvmti(
+fn compiled_method_load(
     &self,
-    env: *mut jvmti::jvmtiEnv,
-    method: jni::jmethodID,
-    _code_size: jni::jint,
-    _code_addr: *const std::ffi::c_void,
-    _map_length: jni::jint,
-    _map: *const std::ffi::c_void,
-    _compile_info: *const std::ffi::c_void,
+    context: CallbackContext<'_>,
+    event: CompiledMethodLoadEvent<'_>,
 ) {
-    // SAFETY: `env` is supplied by the JVM and is used only during this callback.
-    let jvmti = unsafe { Jvmti::from_raw(env) };
-
-    if let Ok((name, signature, _generic)) = jvmti.get_method_name(method) {
-        let lines = jvmti.get_line_number_table(method).unwrap_or_default();
+    if let Ok((name, signature, _generic)) = context.jvmti().get_method_name(event.method()) {
+        let lines = context.jvmti().get_line_number_table(event.method()).unwrap_or_default();
         println!("compiled {name}{signature}: {} line entries", lines.len());
     }
 }
@@ -388,7 +375,7 @@ This crate enforces the following invariants:
 | `JNIEnv` is thread-local | `JniEnv` wrapper is not `Send` |
 | Local refs don't escape | `LocalRef<'a>` tied to `JniEnv` lifetime |
 | Global refs are freed | `GlobalRef` releases on `Drop` |
-| JVMTI memory properly freed | High-level JVMTI methods deallocate buffers they allocate |
+| JVMTI memory properly freed | `JvmtiAllocation` deallocates on drop; raw ownership transfer is explicit and unsafe |
 | Errors are explicit | JVMTI methods return `Result`, JNI helpers use `Option`/`Result` |
 
 ### What Remains Unsafe
@@ -407,7 +394,7 @@ Rust helps — but JVMTI is still a sharp tool.
 **Yes, if you are:**
 - Building profilers, tracers, debuggers, or instrumentation
 - Want Rust's type system around JVMTI's sharp edges
-- Need a single crate that works across JDK 8–27
+- Need a single crate that works across JDK 8 through current JDK 28
 - Comfortable reading JVMTI docs for advanced use cases
 
 **Probably not, if you:**
@@ -439,7 +426,7 @@ Rust helps — but JVMTI is still a sharp tool.
 │   prelude::* - Agent, env, sys, helpers                  │
 ├─────────────────────────────────────────────────────────┤
 │              Raw FFI Bindings (sys module)               │
-│   sys::jni   - Complete JNI vtable (236 functions)       │
+│   sys::jni   - Complete JDK 28 JNI vtable                │
 │   sys::jvmti - Complete JVMTI vtable (156 functions)     │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -451,8 +438,8 @@ Events require three steps — capabilities, callbacks, then enable:
 ```rust
 use jvmti_bindings::prelude::*;
 
-fn on_load(&self, vm: *mut jni::JavaVM, _options: &str) -> jni::jint {
-    let jvmti_env = Jvmti::new(vm).expect("Failed to get JVMTI");
+fn on_load(&self, context: AgentLoadContext<'_>) -> jni::jint {
+    let jvmti_env = context.vm().jvmti().expect("Failed to get JVMTI");
 
     // Requests capabilities, wires callbacks, and enables ClassFileLoadHook.
     jvmti_env.configure_class_file_load_hook_agent().expect("configure");
@@ -494,23 +481,27 @@ eprintln!("jvmti={}", jvmti::error_name(jvmti::jvmtiError::MUST_POSSESS_CAPABILI
 
 ## JDK Compatibility
 
-| JDK | Status | Notable Additions |
+| JDK range | Status | Notable additions |
 |-----|--------|-------------------|
-| 8   | ✅ Tested | Baseline |
-| 11  | ✅ Tested | `SetHeapSamplingInterval` |
-| 17  | ✅ Tested | — |
-| 21  | ✅ Tested | Virtual thread support |
-| 27  | ✅ Verified | `ClearAllFramePops` |
+| 8 | ✅ Tested | JVM TI 1.2.1 baseline |
+| 9-18 | ✅ Every release ABI-verified | Modules, heap sampling, errors, and semantic/source-only changes |
+| 19-23 | ✅ Every release ABI-verified | Preview then final virtual-thread JNI/JVM TI surface |
+| 24-27 | ✅ Every release ABI-verified | Long modified-UTF-8 length, native policy changes, `ClearAllFramePops` |
+| 28 | ✅ Pinned source-header verified | Preview value-object identity/capability surface |
 
-Bindings generated from JDK 27 headers, backwards compatible to JDK 8.
+The latest Rust layout is compared with C headers for every JDK feature release
+from 8 through 28. The release ledger separately records table prefixes,
+interface revisions, callbacks, capabilities, events, errors, semantic-only
+changes, source-only changes, and operational policy. Runtime gates prevent
+access to table tails, reclaimed slots, and capability bits on older JVMs.
 
 ## Project Status
 
 | Aspect | Status |
 |--------|--------|
-| API stability | SemVer 2.x; breaking changes require a major release |
+| API stability | 3.0 candidate; subsequent changes follow SemVer |
 | JVMTI coverage | 156/156 (100%) |
-| JNI coverage | 236/236 (100%) |
+| JNI coverage | Complete through current JDK 28 (237 table slots) |
 | Dependencies | Zero by default; optional `embed` and `bench-tools` features |
 | Testing | Classfile parser, doctests, all-feature builds, example agents |
 
@@ -531,7 +522,7 @@ cargo build --release --example class_logger
 
 - [**Your First Production Agent**](docs/FIRST_AGENT.md) — Step-by-step guide with production hardening
 - [**Public API Surface**](docs/PUBLIC_API.md) — What is stable and supported
-- [**API Stability Checklist**](docs/API_STABILITY.md) — 2.x stability rules
+- [**2.x to 3.0 Migration**](docs/MIGRATING_2_TO_3.md) — complete callback, ownership, unsafe-wrapper, and raw-ABI migration
 - [**Contributor Style Guide**](docs/STYLE_GUIDE.md) — Prelude-first and API consistency
 - [**Public API Report**](docs/PUBLIC_API_REPORT.md) — Snapshot of the public surface
 - [**API Report Script**](scripts/public_api_report.sh) — Regenerate the report with rustdoc JSON
@@ -542,7 +533,7 @@ cargo build --release --example class_logger
 - [**Dynamic Attach**](docs/ATTACH.md) — Agent_OnAttach example and notes
 - [**Safety and FFI Checklist**](docs/SAFETY.md) — Safety rules and audit checklist
 - [**Pitfalls and Footguns**](docs/PITFALLS.md) — Common JVMTI/JNI traps
-- [**Compatibility Matrix**](docs/COMPATIBILITY.md) — JDK 8-27 coverage
+- [**Compatibility Matrix**](docs/COMPATIBILITY.md) — JDK 8-28 coverage and JDK 29 gate
 - [**Versioning Policy**](docs/VERSIONING.md) — API stability and SemVer plan
 - [**API Reference**](https://docs.rs/jvmti-bindings) — Complete API documentation on docs.rs
 

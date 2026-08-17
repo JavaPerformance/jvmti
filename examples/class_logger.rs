@@ -27,10 +27,11 @@ struct ClassLogger {
 }
 
 impl Agent for ClassLogger {
-    fn on_load(&self, vm: *mut jni::JavaVM, options: &str) -> jni::jint {
+    fn on_load(&self, context: AgentLoadContext<'_>) -> jni::jint {
         println!("[ClassLogger] Starting class logger...");
 
         // Parse filter from options (e.g., "filter=com/example")
+        let options = context.options_str().ok().flatten().unwrap_or("");
         let filter: Option<&str> = options
             .split(',')
             .find(|s| s.starts_with("filter="))
@@ -40,7 +41,7 @@ impl Agent for ClassLogger {
             println!("[ClassLogger] Filtering for classes matching: {}", f);
         }
 
-        let jvmti_env = match Jvmti::new(vm) {
+        let jvmti_env = match context.vm().jvmti() {
             Ok(env) => env,
             Err(e) => {
                 eprintln!("[ClassLogger] Failed to get JVMTI env: {:?}", e);
@@ -70,7 +71,7 @@ impl Agent for ClassLogger {
         }
 
         // Enable VM death for summary
-        let _ = jvmti_env.enable_event(jvmti::JVMTI_EVENT_VM_DEATH, std::ptr::null_mut());
+        let _ = jvmti_env.enable_events_global(&[jvmti::JVMTI_EVENT_VM_DEATH]);
 
         println!("[ClassLogger] Ready to log class loads");
         jni::JNI_OK
@@ -78,32 +79,22 @@ impl Agent for ClassLogger {
 
     fn class_file_load_hook(
         &self,
-        _jni: *mut jni::JNIEnv,
-        _class_being_redefined: jni::jclass,
-        _loader: jni::jobject,
-        name: *const std::os::raw::c_char,
-        _protection_domain: jni::jobject,
-        class_data_len: jni::jint,
-        _class_data: *const u8,
-        _new_class_data_len: *mut jni::jint,
-        _new_class_data: *mut *mut u8,
+        _context: CallbackContext<'_>,
+        event: ClassFileLoadHookEvent<'_>,
     ) {
         self.classes_loaded.fetch_add(1, Ordering::Relaxed);
 
         // Get class name (may be null for some system classes)
-        let class_name = if name.is_null() {
-            "<unknown>".to_string()
-        } else {
-            unsafe { std::ffi::CStr::from_ptr(name) }
-                .to_str()
-                .unwrap_or("<invalid>")
-                .to_string()
-        };
+        let class_name = event
+            .name()
+            .and_then(|name| name.to_str().ok())
+            .unwrap_or("<unknown>");
 
         // Log the class load
         println!(
             "[ClassLogger] Loaded: {} ({} bytes)",
-            class_name, class_data_len
+            class_name,
+            event.class_data().len()
         );
 
         // Note: To modify the class, you would:
@@ -114,7 +105,7 @@ impl Agent for ClassLogger {
         // For this example, we just observe (don't modify).
     }
 
-    fn vm_death(&self, _jni: *mut jni::JNIEnv) {
+    fn vm_death(&self, _context: CallbackContext<'_>) {
         let count = self.classes_loaded.load(Ordering::Relaxed);
         println!("[ClassLogger] === Summary ===");
         println!("[ClassLogger] Total classes loaded: {}", count);

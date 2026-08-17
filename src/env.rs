@@ -13,9 +13,9 @@
 //! struct MyAgent;
 //!
 //! impl Agent for MyAgent {
-//!     fn on_load(&self, vm: *mut jni::JavaVM, options: &str) -> jni::jint {
+//!     fn on_load(&self, context: AgentLoadContext<'_>) -> jni::jint {
 //!         // Get JVMTI environment
-//!         let jvmti = Jvmti::new(vm).expect("Failed to get JVMTI env");
+//!         let jvmti = context.vm().jvmti().expect("Failed to get JVMTI env");
 //!
 //!         // Request capabilities
 //!         let mut caps = jvmti::jvmtiCapabilities::default();
@@ -29,9 +29,8 @@
 //!         jni::JNI_OK
 //!     }
 //!
-//!     fn vm_init(&self, jni_ptr: *mut jni::JNIEnv, _thread: jni::jthread) {
-//!         // Get JNI environment
-//!         let jni = unsafe { JniEnv::from_raw(jni_ptr) };
+//!     fn vm_init(&self, context: CallbackContext<'_>, _event: ThreadEvent) {
+//!         let jni = context.jni().expect("VMInit supplies JNI");
 //!
 //!         // Find a class
 //!         if let Some(cls) = jni.find_class("java/lang/System") {
@@ -88,7 +87,8 @@
 //!
 //! fn do_something(jni: &JniEnv) {
 //!     // LocalRef automatically cleans up when it goes out of scope
-//!     let class = LocalRef::new(jni, jni.find_class("java/lang/String").unwrap());
+//!     let raw_class = jni.find_class("java/lang/String").unwrap();
+//!     let class = unsafe { LocalRef::from_raw(jni, raw_class) };
 //!
 //!     // Use class.get() to access the underlying jclass
 //!     let method = jni.get_method_id(class.get(), "length", "()I");
@@ -100,18 +100,18 @@
 // Re-export the JVMTI wrapper
 mod jvmti_impl {
     pub use crate::jvmti_wrapper::{
-        ExtensionEventInfo, ExtensionFunctionInfo, ExtensionParamInfo, Jvmti, LocalVariableEntry,
-        MonitorUsage, StackInfo, ThreadGroupInfo, ThreadInfo,
+        ExtensionEventInfo, ExtensionFunctionInfo, ExtensionParamInfo, JniFunctionTable, Jvmti,
+        JvmtiAllocation, LocalVariableEntry, MonitorUsage, StackInfo, ThreadGroupInfo, ThreadInfo,
     };
 }
 
 // Re-export the JNI wrapper
 mod jni_impl {
-    pub use crate::jni_wrapper::{JniEnv, LocalRef, GlobalRef};
+    pub use crate::jni_wrapper::{GlobalRef, JniEnv, JniVersionError, LocalRef};
 }
 
+pub use jni_impl::{GlobalRef, JniEnv, JniVersionError, LocalRef};
 pub use jvmti_impl::{
-    ExtensionEventInfo, ExtensionFunctionInfo, ExtensionParamInfo, Jvmti, LocalVariableEntry,
-    MonitorUsage, StackInfo, ThreadGroupInfo, ThreadInfo,
+    ExtensionEventInfo, ExtensionFunctionInfo, ExtensionParamInfo, JniFunctionTable, Jvmti,
+    JvmtiAllocation, LocalVariableEntry, MonitorUsage, StackInfo, ThreadGroupInfo, ThreadInfo,
 };
-pub use jni_impl::{JniEnv, LocalRef, GlobalRef};

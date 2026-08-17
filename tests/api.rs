@@ -6,7 +6,7 @@ use jvmti_bindings::{describe_jni_result, jni};
 
 #[test]
 fn jvmti_new_rejects_null_vm_pointer() {
-    let err = match Jvmti::new(ptr::null_mut()) {
+    let err = match unsafe { Jvmti::from_java_vm_raw(ptr::null_mut()) } {
         Ok(_) => panic!("null JavaVM must be rejected"),
         Err(err) => err,
     };
@@ -74,59 +74,40 @@ fn jvmti_workflow_helpers_are_public_api() {
 
 #[test]
 fn jni_classloader_and_module_helpers_are_public_api() {
-    let _ = JniEnv::define_class as fn(&JniEnv, &str, jni::jobject, &[u8]) -> Option<jni::jclass>;
-    let _ = JniEnv::class_loader_parent as fn(&JniEnv, jni::jobject) -> Option<jni::jobject>;
+    let _ = JniEnv::define_class
+        as unsafe fn(&JniEnv, &str, jni::jobject, &[u8]) -> Option<jni::jclass>;
+    let _ = JniEnv::class_loader_parent as unsafe fn(&JniEnv, jni::jobject) -> Option<jni::jobject>;
     let _ = JniEnv::system_class_loader as fn(&JniEnv) -> Option<jni::jobject>;
-    let _ = JniEnv::module_name as fn(&JniEnv, jni::jobject) -> Option<String>;
-    let _ = JniEnv::module_packages as fn(&JniEnv, jni::jobject) -> Option<Vec<String>>;
-    let _ = JniEnv::module_class_loader as fn(&JniEnv, jni::jobject) -> Option<jni::jobject>;
-    let _ = JniEnv::module_can_read as fn(&JniEnv, jni::jobject, jni::jobject) -> bool;
-    let _ = JniEnv::module_is_exported_to as fn(&JniEnv, jni::jobject, &str, jni::jobject) -> bool;
-    let _ = JniEnv::module_is_open_to as fn(&JniEnv, jni::jobject, &str, jni::jobject) -> bool;
+    let _ = JniEnv::module_name as unsafe fn(&JniEnv, jni::jobject) -> Option<String>;
+    let _ = JniEnv::module_packages as unsafe fn(&JniEnv, jni::jobject) -> Option<Vec<String>>;
+    let _ = JniEnv::module_class_loader as unsafe fn(&JniEnv, jni::jobject) -> Option<jni::jobject>;
+    let _ = JniEnv::module_can_read as unsafe fn(&JniEnv, jni::jobject, jni::jobject) -> bool;
+    let _ = JniEnv::module_is_exported_to
+        as unsafe fn(&JniEnv, jni::jobject, &str, jni::jobject) -> bool;
+    let _ =
+        JniEnv::module_is_open_to as unsafe fn(&JniEnv, jni::jobject, &str, jni::jobject) -> bool;
 }
 
 #[test]
-fn agent_jvmti_callback_variants_are_public_api() {
+fn canonical_callback_context_and_payloads_are_public_api() {
     struct ApiAgent;
     impl jvmti_bindings::Agent for ApiAgent {
-        fn on_load(&self, _vm: *mut jni::JavaVM, _options: &str) -> jni::jint {
+        fn on_load(&self, _context: jvmti_bindings::agent::AgentLoadContext<'_>) -> jni::jint {
             jni::JNI_OK
         }
     }
 
-    let agent = ApiAgent;
-    jvmti_bindings::Agent::vm_init_with_jvmti(
-        &agent,
-        ptr::null_mut(),
-        ptr::null_mut(),
-        ptr::null_mut(),
-    );
-    jvmti_bindings::Agent::vm_death_with_jvmti(&agent, ptr::null_mut(), ptr::null_mut());
-    jvmti_bindings::Agent::vm_start_with_jvmti(&agent, ptr::null_mut(), ptr::null_mut());
-    jvmti_bindings::Agent::compiled_method_load_with_jvmti(
-        &agent,
-        ptr::null_mut(),
-        ptr::null_mut(),
-        0,
-        ptr::null(),
-        0,
-        ptr::null(),
-        ptr::null(),
-    );
-    jvmti_bindings::Agent::compiled_method_unload_with_jvmti(
-        &agent,
-        ptr::null_mut(),
-        ptr::null_mut(),
-        ptr::null(),
-    );
-    jvmti_bindings::Agent::dynamic_code_generated_with_jvmti(
-        &agent,
-        ptr::null_mut(),
-        ptr::null(),
-        ptr::null(),
-        0,
-    );
-    jvmti_bindings::Agent::data_dump_request(&agent);
-    jvmti_bindings::Agent::virtual_thread_start(&agent, ptr::null_mut(), ptr::null_mut());
-    jvmti_bindings::Agent::virtual_thread_end(&agent, ptr::null_mut(), ptr::null_mut());
+    use jvmti_bindings::callbacks::{
+        CallbackContext, CompiledMethodLoadEvent, MethodEvent, ThreadEvent,
+    };
+    use jvmti_bindings::Agent;
+
+    let _: for<'a> fn(&ApiAgent, CallbackContext<'a>, ThreadEvent) = <ApiAgent as Agent>::vm_init;
+    let _: for<'a> fn(&ApiAgent, CallbackContext<'a>, MethodEvent) =
+        <ApiAgent as Agent>::method_entry;
+    let _: for<'callback> fn(
+        &ApiAgent,
+        CallbackContext<'callback>,
+        CompiledMethodLoadEvent<'callback>,
+    ) = <ApiAgent as Agent>::compiled_method_load;
 }

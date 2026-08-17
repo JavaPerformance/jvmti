@@ -20,24 +20,26 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let env = unsafe { vm.creator_env() };
     let system = env.find_class("java/lang/System").unwrap();
-    let get_prop = env
-        .get_static_method_id(
-            system,
-            "getProperty",
-            "(Ljava/lang/String;)Ljava/lang/String;",
-        )
-        .unwrap();
-
     let key = env.new_string_utf("java.version").unwrap();
-    let value = env.call_static_object_method(system, get_prop, &[jni::jvalue { l: key }]);
+    // `system` and `key` were returned by this environment and remain live in
+    // the current local-reference frame.
+    let value = unsafe {
+        let get_prop = env
+            .get_static_method_id(
+                system,
+                "getProperty",
+                "(Ljava/lang/String;)Ljava/lang/String;",
+            )
+            .unwrap();
+        env.call_static_object_method(system, get_prop, &[jni::jvalue { l: key }])
+    };
 
     if env.exception_check() {
         env.exception_describe();
         env.exception_clear();
     } else {
-        let version = env
-            .get_string_utf(value)
-            .unwrap_or_else(|| "<unknown>".to_string());
+        let version =
+            unsafe { env.get_string_utf(value) }.unwrap_or_else(|| "<unknown>".to_string());
         println!("java.version={}", version);
     }
 

@@ -33,7 +33,7 @@ if ((${#java_homes[@]} == 0)); then
     exit 2
 fi
 
-tmp=$(mktemp -d)
+tmp=$(mktemp -d "$repo_root/target/event-abi-smoke.XXXXXX")
 trap 'rm -rf "$tmp"' EXIT
 
 cat >"$tmp/EventAbiSmoke.java" <<'JAVA'

@@ -20,7 +20,7 @@ This document captures the safety model for `jvmti-bindings` and a checklist to 
 2. Event callbacks are registered before enabling notifications.
 3. `JNIEnv` is only used on the thread that provided it.
 4. No `unwrap()` or panics in callback code paths.
-5. All JVMTI-allocated memory is deallocated via `Jvmti::deallocate`.
+5. JVM TI allocations remain in `JvmtiAllocation` guards, or raw ownership is explicitly transferred and later released with unsafe `Jvmti::deallocate_raw` on the same environment.
 6. Global and local references are cleaned up.
 7. Agent state is thread-safe (`Mutex`, atomics, or lock-free).
 8. You avoid JNI calls during `GarbageCollectionStart/Finish` callbacks.
@@ -33,3 +33,5 @@ This document captures the safety model for `jvmti-bindings` and a checklist to 
 2. Treat pointer lifetimes as scoped to the callback unless documented otherwise.
 3. Validate lengths before copying into Rust buffers.
 4. Prefer owned Rust structures over returning raw JVMTI structs.
+5. Check runtime feature support before touching an appended JNI tail, a reclaimed JVM TI slot, or a newly consumed capability bit.
+6. Treat null allocation objects as valid for JDK 28 value-object events.

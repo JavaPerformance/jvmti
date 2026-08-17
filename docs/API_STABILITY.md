@@ -1,10 +1,14 @@
 # API Stability Checklist
 
-This checklist defines the stability expectations for 2.x releases and the criteria for API changes.
+This checklist defines the stability expectations for 3.x releases and the criteria for API changes.
 
-## 2.x Stability Rules
+The intentional 2.x-to-3.0 break and its mechanical replacements are recorded
+in [Migrating From 2.x to 3.0](MIGRATING_2_TO_3.md). Version 2.3.x is the final
+compatibility line for the old callback trait.
 
-1. Preserve documented public APIs within the 2.x line.
+## 3.x Stability Rules
+
+1. Preserve documented public APIs within the 3.x line.
 2. Deprecate before removal where possible; removals require a major release.
 3. Keep `env` APIs stable and ergonomic.
 4. Keep `sys` in sync with upstream JNI/JVMTI headers.
@@ -27,3 +31,7 @@ This checklist defines the stability expectations for 2.x releases and the crite
 5. Examples cover core workflows (profiling, tracing, heap sampling).
 6. CI green on Linux/macOS/Windows.
 7. `cargo publish --dry-run` succeeds.
+8. Raw ABI probes pass against every maintained JDK header generation.
+9. Every additive JNI/JVM TI operation is rejected before touching an older table.
+10. Migration examples compile and the migration inventory still covers every 3.0 source break.
+11. The crate builds with all features on the declared MSRV.

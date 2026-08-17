@@ -13,9 +13,9 @@ use jvmti_bindings::prelude::*;
 struct AttachLogger;
 
 impl Agent for AttachLogger {
-    fn on_attach(&self, vm: *mut jni::JavaVM, options: &str) -> jni::jint {
-        println!("[AttachLogger] attached with options: {}", options);
-        let _jvmti = Jvmti::new(vm).expect("get JVMTI");
+    fn on_attach(&self, context: AgentLoadContext<'_>) -> jni::jint {
+        println!("[AttachLogger] attached with options: {:?}", context.options_lossy());
+        let _jvmti = context.vm().jvmti().expect("get JVMTI");
         jni::JNI_OK
     }
 }
@@ -28,3 +28,6 @@ export_agent!(AttachLogger);
 - `on_attach` is called when the agent is loaded via the JVM Attach API.
 - You can request capabilities and enable JVMTI events inside `on_attach`.
 - Thread and JNI safety rules still apply (see `docs/SAFETY.md`).
+- JEP 451 warns for dynamic agent loading and permits a future default denial;
+  operators should use `-XX:+EnableDynamicAgentLoading` where required.
+- Startup loading with `-agentpath` remains the preferred unattended deployment.
