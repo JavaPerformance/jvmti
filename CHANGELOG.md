@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.3.0
 
 ### Added
 1. `Agent::compiled_method_load_with_jvmti`, `Agent::compiled_method_unload_with_jvmti`, and `Agent::dynamic_code_generated_with_jvmti`, allowing JIT callbacks to query method metadata through the callback's `jvmtiEnv*` without breaking existing callback implementations.
