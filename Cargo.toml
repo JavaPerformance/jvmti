@@ -76,6 +76,18 @@ name = "event_abi_smoke"
 crate-type = ["cdylib"]
 
 [[example]]
+name = "callback_idle_bench"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "callback_noop_bench"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "callback_counter_bench"
+crate-type = ["cdylib"]
+
+[[example]]
 name = "embed"
 required-features = ["embed"]
 

@@ -29,6 +29,9 @@ See [Migrating From 2.x to 3.0](docs/MIGRATING_2_TO_3.md) for the callback-by-ca
 7. Allocation-free `&CStr` variants for class, string, method, field, and exception JNI operations while retaining the existing `&str` convenience adapters.
 8. A standard-library-only JVM dynamic loader and dependency-free benchmark harnesses.
 9. A CI-enforced zero-third-party-crate contract across normal, optional, build, development, and benchmark targets.
+10. A live callback-dispatch benchmark comparing no agent, an idle Rust agent,
+    raw-C no-op JVMTI delivery, Rust no-op dispatch, and Rust relaxed-atomic
+    counting under the same non-inlined Java workload.
 
 ### Fixed
 1. Corrected raw timer, stack, heap-reference, extension, callback, JNI indirection, and function-table declarations to match upstream headers.

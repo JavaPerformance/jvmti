@@ -86,6 +86,66 @@ The existing `&str` methods remain ergonomic adapters and allocate only as
 needed to validate and NUL-terminate dynamic input. Keep conversion outside a
 high-frequency callback when the value is reusable.
 
+## Live JVMTI Callback Dispatch Benchmark
+
+Use the callback harness to measure method-entry delivery through a real JVM:
+
+```bash
+JAVA_HOME=/path/to/jdk scripts/benchmark-callback-dispatch.sh
+```
+
+It compares five paths using the same non-inlined Java method workload:
+
+1. `baseline` - no agent.
+2. `rust_idle` - Rust agent loaded, no events enabled.
+3. `c_noop` - raw-C JVMTI method-entry callback with an empty body.
+4. `rust_noop` - the complete Rust trampoline, callback-context construction,
+   panic boundary, trait dispatch, and default empty handler.
+5. `rust_counter` - the Rust path plus one relaxed atomic increment per event.
+
+The raw-C variant is essential: baseline-to-C measures JVM TI event-delivery
+cost, while C-to-Rust isolates the binding's dispatch overhead on the same JVM.
+The harness rotates variant order between repetitions, verifies identical
+workload checksums, and writes every observation to a TSV file under
+`target/callback-dispatch-bench/`.
+
+Workload size is configurable without changing code:
+
+```bash
+CALLBACK_BENCH_WARMUP=5000000 \
+CALLBACK_BENCH_ITERATIONS=50000000 \
+CALLBACK_BENCH_REPETITIONS=7 \
+scripts/benchmark-callback-dispatch.sh
+```
+
+`CALLBACK_BENCH_ITERATIONS` is per worker. Exercise concurrent delivery with:
+
+```bash
+CALLBACK_BENCH_THREADS=8 \
+CALLBACK_BENCH_ITERATIONS=5000000 \
+CALLBACK_BENCH_REPETITIONS=5 \
+scripts/benchmark-callback-dispatch.sh
+```
+
+The no-op variants measure read-only dispatch scalability. The counter variant
+deliberately uses one shared relaxed atomic to reveal whether state contention
+is measurable on the tested JVM and machine. Do not assume a difference when
+the observed ranges overlap; use per-thread buffers or counters when real
+profiler work makes shared state a demonstrated bottleneck.
+With more than one worker, `ns_per_call` is elapsed wall time divided by total
+calls across all workers. It is an aggregate throughput measure, not individual
+callback latency. Short concurrent runs are particularly vulnerable to
+scheduler and frequency noise; use larger workloads and at least five repeats.
+
+Method-entry events can alter JVM compilation and inlining behavior. Do not
+describe baseline-to-agent slowdown as Rust overhead. The `c_noop` to
+`rust_noop` difference is the relevant implementation comparison; production
+profiler work such as stack walking, metadata lookup, locking, allocation, or
+I/O must be measured separately.
+
+The first recorded reference run is documented in
+[Callback Dispatch Benchmark - 2026-08-17](CALLBACK_DISPATCH_BENCHMARK_2026-08-17.md).
+
 ## Regression Discipline
 
 1. Run correctness tests before benchmarks.
