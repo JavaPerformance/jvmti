@@ -578,6 +578,11 @@ impl ClassFile {
         }
 
         let attributes = parse_attributes(&mut r, &constant_pool)?;
+        if r.remaining() != 0 {
+            return Err(ClassFileError::InvalidAttribute(
+                "trailing class-file bytes".to_owned(),
+            ));
+        }
 
         Ok(Self {
             minor_version,
@@ -1072,7 +1077,7 @@ fn parse_stack_map_table(r: &mut Reader) -> Result<StackMapTableAttribute, Class
             _ => {
                 return Err(ClassFileError::InvalidAttribute(
                     "StackMapTable".to_string(),
-                ))
+                ));
             }
         };
         entries.push(frame);
@@ -1095,7 +1100,7 @@ fn parse_verification_type_info(r: &mut Reader) -> Result<VerificationTypeInfo, 
         _ => {
             return Err(ClassFileError::InvalidAttribute(
                 "StackMapTable".to_string(),
-            ))
+            ));
         }
     };
     Ok(info)
@@ -1258,7 +1263,7 @@ fn parse_target_info(r: &mut Reader, target_type: u8) -> Result<TargetInfo, Clas
         _ => {
             return Err(ClassFileError::InvalidAttribute(
                 "type_annotation".to_string(),
-            ))
+            ));
         }
     };
     Ok(info)

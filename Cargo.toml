@@ -1,14 +1,15 @@
 # jvmti - Complete JNI/JVMTI bindings for Rust
 #
-# Zero dependencies by default. ABI-verified against JDK 8 through current JDK 28.
+# Zero third-party crate dependencies across every feature and development target.
+# ABI-verified against JDK 8 through current JDK 28.
 
 [package]
 name = "jvmti-bindings"
 version = "3.0.0"
-edition = "2021"
-rust-version = "1.70"
+edition = "2024"
+rust-version = "1.85"
 
-description = "Complete JNI and JVMTI bindings for Rust with zero dependencies by default. Build JVM agents in pure Rust."
+description = "Complete JNI and JVMTI bindings for Rust with zero third-party crate dependencies. Build JVM agents in pure Rust."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/JavaPerformance/jvmti"
 documentation = "https://docs.rs/jvmti-bindings"
@@ -17,21 +18,13 @@ keywords = ["jvm", "jni", "jvmti", "java", "agent"]
 categories = ["api-bindings", "development-tools::profiling", "external-ffi-bindings"]
 
 [dependencies]
-# No external dependencies by default - all JNI/JVMTI bindings are internal.
-# Optional features enable helper dependencies for embedding and benchmark tools.
-zip = { version = "0.6", optional = true, default-features = false, features = ["deflate"] }
-# 0.8.9 raises its MSRV to Rust 1.71; keep the crate's declared Rust 1.70 floor.
-libloading = { version = "=0.8.8", optional = true }
+# Intentionally empty. Every feature and development target is crate-free.
 
 [features]
 default = []
 advanced = []
 heap-graph = ["advanced"]
-bench-tools = ["zip"]
-embed = ["libloading"]
-
-[dev-dependencies]
-criterion = "0.5"
+embed = []
 
 [lib]
 crate-type = ["rlib"]
@@ -93,4 +86,3 @@ harness = false
 [[bin]]
 name = "jar_parse_bench"
 path = "src/bin/jar_parse_bench.rs"
-required-features = ["bench-tools"]

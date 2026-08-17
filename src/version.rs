@@ -232,9 +232,7 @@ impl JvmtiSemanticChange {
             Self::PermittedSubclassesImmutableDuringRedefinition => {
                 "PermittedSubclasses cannot change during redefinition"
             }
-            Self::AttachFailureMaySkipAgentUnload => {
-                "a failed attach may suppress Agent_OnUnload"
-            }
+            Self::AttachFailureMaySkipAgentUnload => "a failed attach may suppress Agent_OnUnload",
             Self::LegacyHeapFunctionsDeprecated => "JVM TI 1.0 heap functions are deprecated",
             Self::VirtualThreadsFinal => "virtual-thread JVM TI behavior is permanent",
             Self::LivePhaseAgentStartupWarns => {
@@ -563,11 +561,7 @@ pub const fn runtime_support(feature: u16) -> RuntimeSupport {
 pub const fn jni_version_feature(version: jni::jint) -> u16 {
     let major = ((version as u32) >> 16) as u16;
     let minor = (version as u32 & 0xffff) as u16;
-    if major == 1 {
-        minor
-    } else {
-        major
-    }
+    if major == 1 { minor } else { major }
 }
 
 /// Return the feature milestone encoded by a JVM TI interface version.

@@ -15,6 +15,7 @@
 10. Changed `set_global_agent` to return the typed `GlobalAgentAlreadySet` error instead of `()`.
 11. Renamed raw `jvmtiExtensionParamInfo` to the header-defined `jvmtiParamInfo`, replaced `jvmtiObjectCallback` with the corrected legacy `jvmtiHeapObjectCallback`, and replaced the incorrect object-reference metadata family with `jvmtiHeapReferenceInfo`.
 12. Changed `ExtensionFunctionInfo::func` from an untyped pointer to `Option<jvmtiExtensionFunction>` so vendor-defined variadic calls cannot be mistaken for an ordinary safe function.
+13. Raised the minimum supported Rust version to 1.85 and adopted Edition 2024.
 
 See [Migrating From 2.x to 3.0](docs/MIGRATING_2_TO_3.md) for the callback-by-callback table and complete source migration inventory.
 
@@ -25,12 +26,18 @@ See [Migrating From 2.x to 3.0](docs/MIGRATING_2_TO_3.md) for the callback-by-ca
 4. Exact C/Rust ABI probes against every OpenJDK feature release from 8 through current JDK 28 headers.
 5. Panic containment at lifecycle and event FFI boundaries.
 6. A JDK 29 acceptance gate that requires official source rather than inferring support from JDK 28 main line.
+7. Allocation-free `&CStr` variants for class, string, method, field, and exception JNI operations while retaining the existing `&str` convenience adapters.
+8. A standard-library-only JVM dynamic loader and dependency-free benchmark harnesses.
+9. A CI-enforced zero-third-party-crate contract across normal, optional, build, development, and benchmark targets.
 
 ### Fixed
 1. Corrected raw timer, stack, heap-reference, extension, callback, JNI indirection, and function-table declarations to match upstream headers.
 2. Corrected versioned table access and capability-bit use so older JVMs are rejected before newer slots or bits are touched.
 3. Corrected signed native count handling and JVM TI allocation ownership.
-4. Narrowed optional archive dependencies and pinned the embedding loader to versions that preserve the declared Rust 1.70 MSRV with all features enabled.
+4. Removed optional archive, embedding-loader, and benchmark dependencies entirely; all features and development targets now use zero third-party crates.
+5. Rejected trailing classfile bytes and added truncation coverage for every input boundary.
+6. Kept embedded-JVM invocation option storage alive through VM destruction,
+   preventing use-after-free during deferred JVM startup work.
 
 ## 2.3.0
 

@@ -1,3 +1,4 @@
+use std::ffi::CStr;
 use std::ptr;
 
 use jvmti_bindings::env::{JniEnv, Jvmti};
@@ -89,6 +90,24 @@ fn jni_classloader_and_module_helpers_are_public_api() {
 }
 
 #[test]
+fn allocation_free_c_string_helpers_are_public_api() {
+    let _ = JniEnv::find_class_cstr as fn(&JniEnv, &CStr) -> Option<jni::jclass>;
+    let _ = JniEnv::define_class_cstr
+        as unsafe fn(&JniEnv, &CStr, jni::jobject, &[u8]) -> Option<jni::jclass>;
+    let _ =
+        JniEnv::throw_new_cstr as unsafe fn(&JniEnv, jni::jclass, &CStr) -> Result<(), jni::jint>;
+    let _ = JniEnv::new_string_utf_cstr as fn(&JniEnv, &CStr) -> Option<jni::jstring>;
+    let _ = JniEnv::get_method_id_cstr
+        as unsafe fn(&JniEnv, jni::jclass, &CStr, &CStr) -> Option<jni::jmethodID>;
+    let _ = JniEnv::get_static_method_id_cstr
+        as unsafe fn(&JniEnv, jni::jclass, &CStr, &CStr) -> Option<jni::jmethodID>;
+    let _ = JniEnv::get_field_id_cstr
+        as unsafe fn(&JniEnv, jni::jclass, &CStr, &CStr) -> Option<jni::jfieldID>;
+    let _ = JniEnv::get_static_field_id_cstr
+        as unsafe fn(&JniEnv, jni::jclass, &CStr, &CStr) -> Option<jni::jfieldID>;
+}
+
+#[test]
 fn canonical_callback_context_and_payloads_are_public_api() {
     struct ApiAgent;
     impl jvmti_bindings::Agent for ApiAgent {
@@ -97,10 +116,10 @@ fn canonical_callback_context_and_payloads_are_public_api() {
         }
     }
 
+    use jvmti_bindings::Agent;
     use jvmti_bindings::callbacks::{
         CallbackContext, CompiledMethodLoadEvent, MethodEvent, ThreadEvent,
     };
-    use jvmti_bindings::Agent;
 
     let _: for<'a> fn(&ApiAgent, CallbackContext<'a>, ThreadEvent) = <ApiAgent as Agent>::vm_init;
     let _: for<'a> fn(&ApiAgent, CallbackContext<'a>, MethodEvent) =

@@ -2,7 +2,7 @@
 use crate::agent::JavaVmRef;
 use crate::sys::jni;
 use crate::sys::jvmti;
-use crate::version::{jvmti_interface_feature, release_profile, JvmtiFeature};
+use crate::version::{JvmtiFeature, jvmti_interface_feature, release_profile};
 use std::ffi::{CStr, CString};
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
@@ -14,7 +14,7 @@ use std::ptr;
 macro_rules! jvmti_function {
     ($env:expr, $field:ident) => {{
         let table = $env.function_table_ptr()?;
-        $env.read_function_slot(std::ptr::addr_of!((*table).$field))
+        $env.read_function_slot(&raw const (*table).$field)
     }};
 }
 
@@ -89,9 +89,12 @@ fn ptr_in_range(ptr: *const u8, base: *const u8, len: usize) -> bool {
     if ptr.is_null() || base.is_null() || len == 0 {
         return false;
     }
-    let p = ptr as usize;
-    let b = base as usize;
-    p >= b && p < b + len
+    let address = ptr.addr();
+    let start = base.addr();
+    let Some(end) = start.checked_add(len) else {
+        return false;
+    };
+    (start..end).contains(&address)
 }
 
 fn jvmti_array_to_vec<T: Copy>(ptr: *mut T, count: jni::jint) -> Result<Vec<T>, jvmti::jvmtiError> {
@@ -551,7 +554,8 @@ impl Jvmti {
         event_type: u32,
         thread: jni::jthread,
     ) -> Result<(), jvmti::jvmtiError> {
-        self.set_event_notification_mode(true, event_type, thread)
+        // SAFETY: Forwarded from this function's handle contract.
+        unsafe { self.set_event_notification_mode(true, event_type, thread) }
     }
 
     /// Disable a single JVMTI event for a specific thread (or all threads with null).
@@ -563,7 +567,8 @@ impl Jvmti {
         event_type: u32,
         thread: jni::jthread,
     ) -> Result<(), jvmti::jvmtiError> {
-        self.set_event_notification_mode(false, event_type, thread)
+        // SAFETY: Forwarded from this function's handle contract.
+        unsafe { self.set_event_notification_mode(false, event_type, thread) }
     }
 
     /// Enable multiple JVMTI events for all threads.
@@ -2104,7 +2109,7 @@ impl Jvmti {
             let sig = std::ffi::CStr::from_ptr(sig_ptr)
                 .to_string_lossy()
                 .into_owned();
-            let gen = if gen_ptr.is_null() {
+            let generic_signature = if gen_ptr.is_null() {
                 None
             } else {
                 Some(
@@ -2118,7 +2123,7 @@ impl Jvmti {
             if !gen_ptr.is_null() {
                 self.deallocate_owned(gen_ptr as *mut u8)?;
             }
-            Ok((name, sig, gen))
+            Ok((name, sig, generic_signature))
         }
     }
 
@@ -3796,5 +3801,33 @@ impl Jvmti {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ptr_in_range;
+
+    #[test]
+    fn pointer_range_checks_are_half_open_and_overflow_safe() {
+        let base = std::ptr::without_provenance::<u8>(0x1000);
+        assert!(ptr_in_range(base, base, 8));
+        assert!(ptr_in_range(
+            std::ptr::without_provenance::<u8>(0x1007),
+            base,
+            8
+        ));
+        assert!(!ptr_in_range(
+            std::ptr::without_provenance::<u8>(0x1008),
+            base,
+            8
+        ));
+        assert!(!ptr_in_range(
+            std::ptr::without_provenance::<u8>(usize::MAX),
+            std::ptr::without_provenance::<u8>(usize::MAX - 3),
+            8
+        ));
+        assert!(!ptr_in_range(std::ptr::null(), base, 8));
+        assert!(!ptr_in_range(base, base, 0));
     }
 }

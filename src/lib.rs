@@ -1,6 +1,8 @@
+#![deny(unsafe_op_in_unsafe_fn)]
+
 //! # jvmti
 //!
-//! Complete JNI and JVMTI bindings for Rust with **zero dependencies by default**.
+//! Complete JNI and JVMTI bindings for Rust with **zero third-party crate dependencies**.
 //!
 //! This crate provides everything you need to build JVM agents in Rust:
 //! - Low-level FFI bindings to JNI and JVMTI
@@ -10,7 +12,7 @@
 //! ## Features
 //!
 //! - **Complete Coverage**: Complete JDK 28 JNI and JVM TI function tables
-//! - **Zero Dependencies By Default**: Optional helpers are feature-gated
+//! - **Zero Third-Party Crates**: Including optional features, tests, tools, and benchmarks
 //! - **Ergonomic API**: High-level wrappers handle strings, arrays, references
 //! - **Type-Safe**: Proper Rust types, `Result` returns, RAII guards
 //! - **JDK 8-28 Compatible**: ABI-verified against OpenJDK 8 through current JDK 28 headers
@@ -198,6 +200,8 @@ pub mod advanced;
 pub mod agent;
 pub mod callbacks;
 pub mod classfile;
+#[cfg(feature = "embed")]
+mod dynamic_library;
 #[cfg(feature = "embed")]
 pub mod embed;
 pub mod env;
@@ -1255,7 +1259,7 @@ pub fn get_default_callbacks() -> jvmti::jvmtiEventCallbacks {
 #[macro_export]
 macro_rules! export_agent {
     ($agent_type:ty) => {
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         pub unsafe extern "system" fn Agent_OnLoad(
             vm: *mut $crate::sys::jni::JavaVM,
             options: *mut std::ffi::c_char,
@@ -1264,7 +1268,7 @@ macro_rules! export_agent {
             unsafe { $crate::__agent_on_load::<$agent_type>(vm, options, reserved) }
         }
 
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         pub unsafe extern "system" fn Agent_OnAttach(
             vm: *mut $crate::sys::jni::JavaVM,
             options: *mut std::ffi::c_char,
@@ -1273,7 +1277,7 @@ macro_rules! export_agent {
             unsafe { $crate::__agent_on_attach::<$agent_type>(vm, options, reserved) }
         }
 
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         pub unsafe extern "system" fn Agent_OnUnload(vm: *mut $crate::sys::jni::JavaVM) {
             unsafe { $crate::__agent_on_unload(vm) }
         }

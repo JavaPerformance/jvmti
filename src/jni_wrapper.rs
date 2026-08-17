@@ -54,7 +54,7 @@ use std::rc::Rc;
 macro_rules! jni_function {
     ($env:expr, $field:ident) => {{
         let table = $env.function_table_ptr();
-        $env.read_function_slot(std::ptr::addr_of!((*table).$field))
+        $env.read_function_slot(&raw const (*table).$field)
     }};
 }
 
@@ -129,11 +129,7 @@ impl JniEnv {
         unsafe {
             let get_java_vm = jni_function!(self, GetJavaVM);
             let result = get_java_vm(self.env, &mut vm);
-            if result == 0 {
-                Ok(vm)
-            } else {
-                Err(result)
-            }
+            if result == 0 { Ok(vm) } else { Err(result) }
         }
     }
 
@@ -252,14 +248,18 @@ impl JniEnv {
     /// The name should use '/' as package separator (e.g., "java/lang/String").
     pub fn find_class(&self, name: &str) -> Option<jni::jclass> {
         let c_name = CString::new(name).ok()?;
+        self.find_class_cstr(&c_name)
+    }
+
+    /// Finds a class without allocating a temporary C string.
+    ///
+    /// This is the preferred form for static names, for example
+    /// `env.find_class_cstr(c"java/lang/String")`.
+    pub fn find_class_cstr(&self, name: &CStr) -> Option<jni::jclass> {
         unsafe {
             let vtable = *self.env;
-            let cls = ((*vtable).FindClass)(self.env, c_name.as_ptr());
-            if cls.is_null() {
-                None
-            } else {
-                Some(cls)
-            }
+            let cls = ((*vtable).FindClass)(self.env, name.as_ptr());
+            if cls.is_null() { None } else { Some(cls) }
         }
     }
 
@@ -280,20 +280,33 @@ impl JniEnv {
             return None;
         }
         let c_name = CString::new(name).ok()?;
+        // SAFETY: Forwarded from this function's loader contract.
+        unsafe { self.define_class_cstr(&c_name, loader, bytes) }
+    }
+
+    /// Defines a class without allocating a temporary C string for its name.
+    /// # Safety
+    ///
+    /// `loader` must be null or a valid loader reference for this environment.
+    pub unsafe fn define_class_cstr(
+        &self,
+        name: &CStr,
+        loader: jni::jobject,
+        bytes: &[u8],
+    ) -> Option<jni::jclass> {
+        if bytes.len() > jni::jsize::MAX as usize {
+            return None;
+        }
         unsafe {
             let vtable = *self.env;
             let cls = ((*vtable).DefineClass)(
                 self.env,
-                c_name.as_ptr(),
+                name.as_ptr(),
                 loader,
                 bytes.as_ptr() as *const jni::jbyte,
                 bytes.len() as jni::jsize,
             );
-            if cls.is_null() {
-                None
-            } else {
-                Some(cls)
-            }
+            if cls.is_null() { None } else { Some(cls) }
         }
     }
 
@@ -362,19 +375,21 @@ impl JniEnv {
         if loader.is_null() {
             return None;
         }
-        let class_loader_class = self.find_class("java/lang/ClassLoader")?;
-        let Some(method) =
-            self.get_method_id(class_loader_class, "getParent", "()Ljava/lang/ClassLoader;")
-        else {
+        // SAFETY: `loader` is covered by this function's contract; all other
+        // handles below are local references created by this environment.
+        unsafe {
+            let class_loader_class = self.find_class_cstr(c"java/lang/ClassLoader")?;
+            let Some(method) = self.get_method_id_cstr(
+                class_loader_class,
+                c"getParent",
+                c"()Ljava/lang/ClassLoader;",
+            ) else {
+                self.delete_local_ref(class_loader_class);
+                return None;
+            };
+            let parent = self.call_object_method(loader, method, &[]);
             self.delete_local_ref(class_loader_class);
-            return None;
-        };
-        let parent = self.call_object_method(loader, method, &[]);
-        self.delete_local_ref(class_loader_class);
-        if parent.is_null() {
-            None
-        } else {
-            Some(parent)
+            if parent.is_null() { None } else { Some(parent) }
         }
     }
 
@@ -382,13 +397,13 @@ impl JniEnv {
     ///
     /// The returned object is a local reference.
     pub fn system_class_loader(&self) -> Option<jni::jobject> {
-        let class_loader_class = self.find_class("java/lang/ClassLoader")?;
+        let class_loader_class = self.find_class_cstr(c"java/lang/ClassLoader")?;
         // Every handle below was produced by this environment in this call.
         let loader = unsafe {
-            let Some(method) = self.get_static_method_id(
+            let Some(method) = self.get_static_method_id_cstr(
                 class_loader_class,
-                "getSystemClassLoader",
-                "()Ljava/lang/ClassLoader;",
+                c"getSystemClassLoader",
+                c"()Ljava/lang/ClassLoader;",
             ) else {
                 self.delete_local_ref(class_loader_class);
                 return None;
@@ -397,11 +412,7 @@ impl JniEnv {
             self.delete_local_ref(class_loader_class);
             loader
         };
-        if loader.is_null() {
-            None
-        } else {
-            Some(loader)
-        }
+        if loader.is_null() { None } else { Some(loader) }
     }
 
     /// Returns `Module.getName()`.
@@ -415,20 +426,25 @@ impl JniEnv {
         if module.is_null() {
             return None;
         }
-        let module_class = self.get_object_class(module);
-        let Some(method) = self.get_method_id(module_class, "getName", "()Ljava/lang/String;")
-        else {
+        // SAFETY: `module` is covered by this function's contract; all other
+        // handles below are local references created by this environment.
+        unsafe {
+            let module_class = self.get_object_class(module);
+            let Some(method) =
+                self.get_method_id_cstr(module_class, c"getName", c"()Ljava/lang/String;")
+            else {
+                self.delete_local_ref(module_class);
+                return None;
+            };
+            let name_obj = self.call_object_method(module, method, &[]);
             self.delete_local_ref(module_class);
-            return None;
-        };
-        let name_obj = self.call_object_method(module, method, &[]);
-        self.delete_local_ref(module_class);
-        if name_obj.is_null() {
-            return None;
+            if name_obj.is_null() {
+                return None;
+            }
+            let name = self.get_string_utf(name_obj as jni::jstring);
+            self.delete_local_ref(name_obj);
+            name
         }
-        let name = self.get_string_utf(name_obj as jni::jstring);
-        self.delete_local_ref(name_obj);
-        name
     }
 
     /// Returns `Module.getPackages()` as dotted Java package names.
@@ -439,43 +455,49 @@ impl JniEnv {
         if module.is_null() {
             return None;
         }
-        let module_class = self.get_object_class(module);
-        let Some(method) = self.get_method_id(module_class, "getPackages", "()Ljava/util/Set;")
-        else {
+        // SAFETY: `module` is covered by this function's contract; all other
+        // handles below are local references created by this environment.
+        unsafe {
+            let module_class = self.get_object_class(module);
+            let Some(method) =
+                self.get_method_id_cstr(module_class, c"getPackages", c"()Ljava/util/Set;")
+            else {
+                self.delete_local_ref(module_class);
+                return None;
+            };
+            let package_set = self.call_object_method(module, method, &[]);
             self.delete_local_ref(module_class);
-            return None;
-        };
-        let package_set = self.call_object_method(module, method, &[]);
-        self.delete_local_ref(module_class);
-        if package_set.is_null() {
-            return Some(Vec::new());
-        }
-        let set_class = self.get_object_class(package_set);
-        let Some(to_array) = self.get_method_id(set_class, "toArray", "()[Ljava/lang/Object;")
-        else {
+            if package_set.is_null() {
+                return Some(Vec::new());
+            }
+            let set_class = self.get_object_class(package_set);
+            let Some(to_array) =
+                self.get_method_id_cstr(set_class, c"toArray", c"()[Ljava/lang/Object;")
+            else {
+                self.delete_local_ref(set_class);
+                self.delete_local_ref(package_set);
+                return None;
+            };
+            let array = self.call_object_method(package_set, to_array, &[]) as jni::jobjectArray;
             self.delete_local_ref(set_class);
             self.delete_local_ref(package_set);
-            return None;
-        };
-        let array = self.call_object_method(package_set, to_array, &[]) as jni::jobjectArray;
-        self.delete_local_ref(set_class);
-        self.delete_local_ref(package_set);
-        if array.is_null() {
-            return Some(Vec::new());
-        }
-        let len = self.get_array_length(array);
-        let mut packages = Vec::new();
-        for index in 0..len {
-            let element = self.get_object_array_element(array, index);
-            if !element.is_null() {
-                if let Some(package_name) = self.get_string_utf(element as jni::jstring) {
-                    packages.push(package_name);
-                }
-                self.delete_local_ref(element);
+            if array.is_null() {
+                return Some(Vec::new());
             }
+            let len = self.get_array_length(array);
+            let mut packages = Vec::new();
+            for index in 0..len {
+                let element = self.get_object_array_element(array, index);
+                if !element.is_null() {
+                    if let Some(package_name) = self.get_string_utf(element as jni::jstring) {
+                        packages.push(package_name);
+                    }
+                    self.delete_local_ref(element);
+                }
+            }
+            self.delete_local_ref(array);
+            Some(packages)
         }
-        self.delete_local_ref(array);
-        Some(packages)
     }
 
     /// Returns `Module.getClassLoader()`.
@@ -489,19 +511,21 @@ impl JniEnv {
         if module.is_null() {
             return None;
         }
-        let module_class = self.get_object_class(module);
-        let Some(method) =
-            self.get_method_id(module_class, "getClassLoader", "()Ljava/lang/ClassLoader;")
-        else {
+        // SAFETY: `module` is covered by this function's contract; all other
+        // handles below are local references created by this environment.
+        unsafe {
+            let module_class = self.get_object_class(module);
+            let Some(method) = self.get_method_id_cstr(
+                module_class,
+                c"getClassLoader",
+                c"()Ljava/lang/ClassLoader;",
+            ) else {
+                self.delete_local_ref(module_class);
+                return None;
+            };
+            let loader = self.call_object_method(module, method, &[]);
             self.delete_local_ref(module_class);
-            return None;
-        };
-        let loader = self.call_object_method(module, method, &[]);
-        self.delete_local_ref(module_class);
-        if loader.is_null() {
-            None
-        } else {
-            Some(loader)
+            if loader.is_null() { None } else { Some(loader) }
         }
     }
 
@@ -513,16 +537,21 @@ impl JniEnv {
         if module.is_null() || other.is_null() {
             return false;
         }
-        let module_class = self.get_object_class(module);
-        let Some(method) = self.get_method_id(module_class, "canRead", "(Ljava/lang/Module;)Z")
-        else {
+        // SAFETY: Both module handles are covered by this function's contract;
+        // all other handles are local references from this environment.
+        unsafe {
+            let module_class = self.get_object_class(module);
+            let Some(method) =
+                self.get_method_id_cstr(module_class, c"canRead", c"(Ljava/lang/Module;)Z")
+            else {
+                self.delete_local_ref(module_class);
+                return false;
+            };
+            let args = [jni::jvalue { l: other }];
+            let can_read = self.call_boolean_method(module, method, &args);
             self.delete_local_ref(module_class);
-            return false;
-        };
-        let args = [jni::jvalue { l: other }];
-        let can_read = self.call_boolean_method(module, method, &args);
-        self.delete_local_ref(module_class);
-        can_read
+            can_read
+        }
     }
 
     /// Returns `Module.isExported(package_name, other)`.
@@ -537,7 +566,8 @@ impl JniEnv {
         package_name: &str,
         other: jni::jobject,
     ) -> bool {
-        self.module_package_access(module, package_name, other, "isExported")
+        // SAFETY: Forwarded from this function's handle contract.
+        unsafe { self.module_package_access(module, package_name, other, c"isExported") }
     }
 
     /// Returns `Module.isOpen(package_name, other)`.
@@ -552,7 +582,8 @@ impl JniEnv {
         package_name: &str,
         other: jni::jobject,
     ) -> bool {
-        self.module_package_access(module, package_name, other, "isOpen")
+        // SAFETY: Forwarded from this function's handle contract.
+        unsafe { self.module_package_access(module, package_name, other, c"isOpen") }
     }
 
     unsafe fn module_package_access(
@@ -560,29 +591,33 @@ impl JniEnv {
         module: jni::jobject,
         package_name: &str,
         other: jni::jobject,
-        method_name: &str,
+        method_name: &CStr,
     ) -> bool {
         if module.is_null() || other.is_null() {
             return false;
         }
-        let module_class = self.get_object_class(module);
-        let Some(method) = self.get_method_id(
-            module_class,
-            method_name,
-            "(Ljava/lang/String;Ljava/lang/Module;)Z",
-        ) else {
+        // SAFETY: Both module handles are covered by this function's contract;
+        // all other handles are local references from this environment.
+        unsafe {
+            let module_class = self.get_object_class(module);
+            let Some(method) = self.get_method_id_cstr(
+                module_class,
+                method_name,
+                c"(Ljava/lang/String;Ljava/lang/Module;)Z",
+            ) else {
+                self.delete_local_ref(module_class);
+                return false;
+            };
+            let Some(package) = self.new_string_utf(package_name) else {
+                self.delete_local_ref(module_class);
+                return false;
+            };
+            let args = [jni::jvalue { l: package }, jni::jvalue { l: other }];
+            let result = self.call_boolean_method(module, method, &args);
+            self.delete_local_ref(package);
             self.delete_local_ref(module_class);
-            return false;
-        };
-        let Some(package) = self.new_string_utf(package_name) else {
-            self.delete_local_ref(module_class);
-            return false;
-        };
-        let args = [jni::jvalue { l: package }, jni::jvalue { l: other }];
-        let result = self.call_boolean_method(module, method, &args);
-        self.delete_local_ref(package);
-        self.delete_local_ref(module_class);
-        result
+            result
+        }
     }
 
     // =========================================================================
@@ -618,11 +653,7 @@ impl JniEnv {
         unsafe {
             let vtable = *self.env;
             let exc = ((*vtable).ExceptionOccurred)(self.env);
-            if exc.is_null() {
-                None
-            } else {
-                Some(exc)
-            }
+            if exc.is_null() { None } else { Some(exc) }
         }
     }
 
@@ -634,11 +665,7 @@ impl JniEnv {
         unsafe {
             let vtable = *self.env;
             let result = ((*vtable).Throw)(self.env, obj);
-            if result == 0 {
-                Ok(())
-            } else {
-                Err(result)
-            }
+            if result == 0 { Ok(()) } else { Err(result) }
         }
     }
 
@@ -648,14 +675,19 @@ impl JniEnv {
     /// Every JNI handle argument must be valid for this environment, current thread, and operation for the duration required by the JNI specification.
     pub unsafe fn throw_new(&self, cls: jni::jclass, msg: &str) -> Result<(), jni::jint> {
         let c_msg = CString::new(msg).map_err(|_| -1)?;
+        // SAFETY: Forwarded from this function's class-handle contract.
+        unsafe { self.throw_new_cstr(cls, &c_msg) }
+    }
+
+    /// Throws a new exception without allocating a temporary C string.
+    /// # Safety
+    ///
+    /// `cls` must be a valid exception class for this environment.
+    pub unsafe fn throw_new_cstr(&self, cls: jni::jclass, msg: &CStr) -> Result<(), jni::jint> {
         unsafe {
             let vtable = *self.env;
-            let result = ((*vtable).ThrowNew)(self.env, cls, c_msg.as_ptr());
-            if result == 0 {
-                Ok(())
-            } else {
-                Err(result)
-            }
+            let result = ((*vtable).ThrowNew)(self.env, cls, msg.as_ptr());
+            if result == 0 { Ok(()) } else { Err(result) }
         }
     }
 
@@ -666,14 +698,15 @@ impl JniEnv {
     /// Creates a new Java string from a Rust string.
     pub fn new_string_utf(&self, s: &str) -> Option<jni::jstring> {
         let c_str = CString::new(s).ok()?;
+        self.new_string_utf_cstr(&c_str)
+    }
+
+    /// Creates a Java modified-UTF-8 string without a temporary allocation.
+    pub fn new_string_utf_cstr(&self, value: &CStr) -> Option<jni::jstring> {
         unsafe {
             let vtable = *self.env;
-            let jstr = ((*vtable).NewStringUTF)(self.env, c_str.as_ptr());
-            if jstr.is_null() {
-                None
-            } else {
-                Some(jstr)
-            }
+            let jstr = ((*vtable).NewStringUTF)(self.env, value.as_ptr());
+            if jstr.is_null() { None } else { Some(jstr) }
         }
     }
 
@@ -683,11 +716,7 @@ impl JniEnv {
         unsafe {
             let vtable = *self.env;
             let jstr = ((*vtable).NewString)(self.env, utf16.as_ptr(), utf16.len() as jni::jsize);
-            if jstr.is_null() {
-                None
-            } else {
-                Some(jstr)
-            }
+            if jstr.is_null() { None } else { Some(jstr) }
         }
     }
 
@@ -777,14 +806,24 @@ impl JniEnv {
     ) -> Option<jni::jmethodID> {
         let c_name = CString::new(name).ok()?;
         let c_sig = CString::new(sig).ok()?;
+        // SAFETY: Forwarded from this function's class-handle contract.
+        unsafe { self.get_method_id_cstr(cls, &c_name, &c_sig) }
+    }
+
+    /// Gets an instance method ID without allocating name/signature strings.
+    /// # Safety
+    ///
+    /// `cls` must be a valid class reference for this environment.
+    pub unsafe fn get_method_id_cstr(
+        &self,
+        cls: jni::jclass,
+        name: &CStr,
+        sig: &CStr,
+    ) -> Option<jni::jmethodID> {
         unsafe {
             let vtable = *self.env;
-            let mid = ((*vtable).GetMethodID)(self.env, cls, c_name.as_ptr(), c_sig.as_ptr());
-            if mid.is_null() {
-                None
-            } else {
-                Some(mid)
-            }
+            let mid = ((*vtable).GetMethodID)(self.env, cls, name.as_ptr(), sig.as_ptr());
+            if mid.is_null() { None } else { Some(mid) }
         }
     }
 
@@ -800,14 +839,24 @@ impl JniEnv {
     ) -> Option<jni::jmethodID> {
         let c_name = CString::new(name).ok()?;
         let c_sig = CString::new(sig).ok()?;
+        // SAFETY: Forwarded from this function's class-handle contract.
+        unsafe { self.get_static_method_id_cstr(cls, &c_name, &c_sig) }
+    }
+
+    /// Gets a static method ID without allocating name/signature strings.
+    /// # Safety
+    ///
+    /// `cls` must be a valid class reference for this environment.
+    pub unsafe fn get_static_method_id_cstr(
+        &self,
+        cls: jni::jclass,
+        name: &CStr,
+        sig: &CStr,
+    ) -> Option<jni::jmethodID> {
         unsafe {
             let vtable = *self.env;
-            let mid = ((*vtable).GetStaticMethodID)(self.env, cls, c_name.as_ptr(), c_sig.as_ptr());
-            if mid.is_null() {
-                None
-            } else {
-                Some(mid)
-            }
+            let mid = ((*vtable).GetStaticMethodID)(self.env, cls, name.as_ptr(), sig.as_ptr());
+            if mid.is_null() { None } else { Some(mid) }
         }
     }
 
@@ -827,14 +876,24 @@ impl JniEnv {
     ) -> Option<jni::jfieldID> {
         let c_name = CString::new(name).ok()?;
         let c_sig = CString::new(sig).ok()?;
+        // SAFETY: Forwarded from this function's class-handle contract.
+        unsafe { self.get_field_id_cstr(cls, &c_name, &c_sig) }
+    }
+
+    /// Gets an instance field ID without allocating name/signature strings.
+    /// # Safety
+    ///
+    /// `cls` must be a valid class reference for this environment.
+    pub unsafe fn get_field_id_cstr(
+        &self,
+        cls: jni::jclass,
+        name: &CStr,
+        sig: &CStr,
+    ) -> Option<jni::jfieldID> {
         unsafe {
             let vtable = *self.env;
-            let fid = ((*vtable).GetFieldID)(self.env, cls, c_name.as_ptr(), c_sig.as_ptr());
-            if fid.is_null() {
-                None
-            } else {
-                Some(fid)
-            }
+            let fid = ((*vtable).GetFieldID)(self.env, cls, name.as_ptr(), sig.as_ptr());
+            if fid.is_null() { None } else { Some(fid) }
         }
     }
 
@@ -850,14 +909,24 @@ impl JniEnv {
     ) -> Option<jni::jfieldID> {
         let c_name = CString::new(name).ok()?;
         let c_sig = CString::new(sig).ok()?;
+        // SAFETY: Forwarded from this function's class-handle contract.
+        unsafe { self.get_static_field_id_cstr(cls, &c_name, &c_sig) }
+    }
+
+    /// Gets a static field ID without allocating name/signature strings.
+    /// # Safety
+    ///
+    /// `cls` must be a valid class reference for this environment.
+    pub unsafe fn get_static_field_id_cstr(
+        &self,
+        cls: jni::jclass,
+        name: &CStr,
+        sig: &CStr,
+    ) -> Option<jni::jfieldID> {
         unsafe {
             let vtable = *self.env;
-            let fid = ((*vtable).GetStaticFieldID)(self.env, cls, c_name.as_ptr(), c_sig.as_ptr());
-            if fid.is_null() {
-                None
-            } else {
-                Some(fid)
-            }
+            let fid = ((*vtable).GetStaticFieldID)(self.env, cls, name.as_ptr(), sig.as_ptr());
+            if fid.is_null() { None } else { Some(fid) }
         }
     }
 
@@ -873,11 +942,7 @@ impl JniEnv {
         unsafe {
             let vtable = *self.env;
             let obj = ((*vtable).AllocObject)(self.env, cls);
-            if obj.is_null() {
-                None
-            } else {
-                Some(obj)
-            }
+            if obj.is_null() { None } else { Some(obj) }
         }
     }
 
@@ -894,11 +959,7 @@ impl JniEnv {
         unsafe {
             let vtable = *self.env;
             let obj = ((*vtable).NewObjectA)(self.env, cls, method_id, args.as_ptr());
-            if obj.is_null() {
-                None
-            } else {
-                Some(obj)
-            }
+            if obj.is_null() { None } else { Some(obj) }
         }
     }
 
@@ -990,11 +1051,7 @@ impl JniEnv {
         unsafe {
             let vtable = *self.env;
             let result = ((*vtable).EnsureLocalCapacity)(self.env, capacity);
-            if result == 0 {
-                Ok(())
-            } else {
-                Err(result)
-            }
+            if result == 0 { Ok(()) } else { Err(result) }
         }
     }
 
@@ -1003,11 +1060,7 @@ impl JniEnv {
         unsafe {
             let vtable = *self.env;
             let result = ((*vtable).PushLocalFrame)(self.env, capacity);
-            if result == 0 {
-                Ok(())
-            } else {
-                Err(result)
-            }
+            if result == 0 { Ok(()) } else { Err(result) }
         }
     }
 
@@ -1050,11 +1103,7 @@ impl JniEnv {
         unsafe {
             let vtable = *self.env;
             let arr = ((*vtable).NewObjectArray)(self.env, length, cls, init);
-            if arr.is_null() {
-                None
-            } else {
-                Some(arr)
-            }
+            if arr.is_null() { None } else { Some(arr) }
         }
     }
 
@@ -1094,11 +1143,7 @@ impl JniEnv {
         unsafe {
             let vtable = *self.env;
             let arr = ((*vtable).NewByteArray)(self.env, length);
-            if arr.is_null() {
-                None
-            } else {
-                Some(arr)
-            }
+            if arr.is_null() { None } else { Some(arr) }
         }
     }
 
@@ -1141,11 +1186,7 @@ impl JniEnv {
         unsafe {
             let vtable = *self.env;
             let arr = ((*vtable).NewIntArray)(self.env, length);
-            if arr.is_null() {
-                None
-            } else {
-                Some(arr)
-            }
+            if arr.is_null() { None } else { Some(arr) }
         }
     }
 
@@ -1188,11 +1229,7 @@ impl JniEnv {
         unsafe {
             let vtable = *self.env;
             let arr = ((*vtable).NewLongArray)(self.env, length);
-            if arr.is_null() {
-                None
-            } else {
-                Some(arr)
-            }
+            if arr.is_null() { None } else { Some(arr) }
         }
     }
 
@@ -1521,11 +1558,7 @@ impl JniEnv {
         unsafe {
             let vtable = *self.env;
             let result = ((*vtable).MonitorEnter)(self.env, obj);
-            if result == 0 {
-                Ok(())
-            } else {
-                Err(result)
-            }
+            if result == 0 { Ok(()) } else { Err(result) }
         }
     }
 
@@ -1537,11 +1570,7 @@ impl JniEnv {
         unsafe {
             let vtable = *self.env;
             let result = ((*vtable).MonitorExit)(self.env, obj);
-            if result == 0 {
-                Ok(())
-            } else {
-                Err(result)
-            }
+            if result == 0 { Ok(()) } else { Err(result) }
         }
     }
 
@@ -1566,11 +1595,7 @@ impl JniEnv {
                 methods.as_ptr(),
                 methods.len() as jni::jint,
             );
-            if result == 0 {
-                Ok(())
-            } else {
-                Err(result)
-            }
+            if result == 0 { Ok(()) } else { Err(result) }
         }
     }
 
@@ -1582,11 +1607,7 @@ impl JniEnv {
         unsafe {
             let vtable = *self.env;
             let result = ((*vtable).UnregisterNatives)(self.env, cls);
-            if result == 0 {
-                Ok(())
-            } else {
-                Err(result)
-            }
+            if result == 0 { Ok(()) } else { Err(result) }
         }
     }
 }
@@ -1633,7 +1654,7 @@ impl<'a> LocalRef<'a> {
     }
 }
 
-impl<'a> Drop for LocalRef<'a> {
+impl Drop for LocalRef<'_> {
     fn drop(&mut self) {
         if !self.obj.is_null() {
             // LocalRef's unsafe constructor established this ownership.

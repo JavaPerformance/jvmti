@@ -44,10 +44,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     if let Err(code) = vm.destroy() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("DestroyJavaVM failed: {} ({code})", jni::result_name(code)),
-        )
+        return Err(std::io::Error::other(format!(
+            "DestroyJavaVM failed: {} ({code})",
+            jni::result_name(code)
+        ))
         .into());
     }
     Ok(())

@@ -9,6 +9,21 @@ Version 2.3.x is the final compatibility line for the old callback trait. Stay
 on 2.3.x while migrating if the application cannot absorb all changes in one
 update; do not mix 2.3 callback implementations with 3.0 raw bindings.
 
+## Toolchain And Dependency Changes
+
+Version 3.0 requires Rust 1.85 or newer and uses Edition 2024. Upgrade the
+consumer toolchain before changing the dependency version. The crate has zero
+third-party crate dependencies across every optional feature and development
+target; the `embed` feature now uses a small internal platform loader.
+
+Existing `&str` JNI helpers remain source-compatible. Performance-sensitive
+code can migrate fixed names and signatures to allocation-free `&CStr` variants:
+
+```rust,ignore
+let class = jni.find_class_cstr(c"java/lang/String")?;
+let method = unsafe { jni.get_method_id_cstr(class, c"length", c"()I")? };
+```
+
 ## Who Must Read Which Sections
 
 | Consumer | Required sections |
@@ -37,6 +52,8 @@ update; do not mix 2.3 callback implementations with 3.0 raw bindings.
    The 3.0 crate deliberately provides no alias for a known-wrong ABI.
 8. Run the normal test suite on every supported JDK and repeat any native
    sanitizer or callback-delivery tests used by the application.
+9. Compile once with Rust 1.85 and once with current stable Rust; do not infer
+   MSRV compatibility from a newer compiler.
 
 The repository's compile-checked counterpart to this guide is
 `tests/migration_3.rs`.

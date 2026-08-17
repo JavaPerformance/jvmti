@@ -1,10 +1,10 @@
 use std::ffi::{c_char, c_void};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use jvmti_bindings::agent::{AgentLoadContext, AgentUnloadContext};
 use jvmti_bindings::sys::jni;
-use jvmti_bindings::{Agent, __agent_on_load, __agent_on_unload};
+use jvmti_bindings::{__agent_on_load, __agent_on_unload, Agent};
 
 static VM: AtomicUsize = AtomicUsize::new(0);
 static RESERVED: AtomicUsize = AtomicUsize::new(0);

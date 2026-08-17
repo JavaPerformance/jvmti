@@ -13,6 +13,10 @@ This document captures the safety model for `jvmti-bindings` and a checklist to 
 7. Assume callbacks can be concurrent and re-entrant.
 8. Avoid long-running work inside callbacks; offload to worker threads.
 9. Respect callback-specific constraints (some callbacks forbid JNI).
+10. Keep unsafe operations narrow. The crate denies `unsafe_op_in_unsafe_fn`, so
+    an unsafe function does not implicitly make its whole body an unsafe block.
+11. Keep a dynamically loaded JVM library alive until every function pointer
+    obtained from it is no longer callable and the embedded VM is destroyed.
 
 ## Agent Safety Checklist
 
@@ -35,3 +39,8 @@ This document captures the safety model for `jvmti-bindings` and a checklist to 
 4. Prefer owned Rust structures over returning raw JVMTI structs.
 5. Check runtime feature support before touching an appended JNI tail, a reclaimed JVM TI slot, or a newly consumed capability bit.
 6. Treat null allocation objects as valid for JDK 28 value-object events.
+7. Prefer `&CStr` APIs for fixed JNI names in hot paths; construct or validate
+   the C string outside the callback loop.
+8. For dynamic symbols, verify platform loader success before converting an
+   address to a typed function pointer. The caller remains responsible for the
+   symbol's exact ABI and signature.

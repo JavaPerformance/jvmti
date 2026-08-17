@@ -1,15 +1,15 @@
 use std::ffi::c_char;
 use std::ptr;
-use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 
 use jvmti_bindings::env::{JniEnv, Jvmti};
 use jvmti_bindings::sys::{jni, jvmti};
 use jvmti_bindings::version::{
-    jni_version_feature, jvmti_interface_feature, release_delta, release_profile, runtime_support,
     FeatureMaturity, JniFeature, JvmtiErrorAddition, JvmtiFeature, JvmtiSemanticChange,
-    NativePolicyChange, NativeSourceChange, RuntimeChange, RuntimeSupport, MAX_VERIFIED_JDK,
-    MIN_SUPPORTED_JDK, RELEASE_PROFILES,
+    MAX_VERIFIED_JDK, MIN_SUPPORTED_JDK, NativePolicyChange, NativeSourceChange, RELEASE_PROFILES,
+    RuntimeChange, RuntimeSupport, jni_version_feature, jvmti_interface_feature, release_delta,
+    release_profile, runtime_support,
 };
 
 static JNI_CALLS: AtomicUsize = AtomicUsize::new(0);
@@ -755,49 +755,63 @@ fn semantic_only_release_changes_are_explicit() {
     assert!(jdk28.changes.contains(&RuntimeChange::JvmtiSemantic(
         JvmtiSemanticChange::ValueAllocationObjectMayBeNull
     )));
-    assert!(release_profile(11)
-        .unwrap()
-        .changes
-        .contains(&RuntimeChange::JvmtiError(
-            JvmtiErrorAddition::UnsupportedRedefinitionClassAttributeChanged
-        )));
-    assert!(release_profile(19)
-        .unwrap()
-        .changes
-        .contains(&RuntimeChange::JvmtiError(
-            JvmtiErrorAddition::UnsupportedOperation
-        )));
+    assert!(
+        release_profile(11)
+            .unwrap()
+            .changes
+            .contains(&RuntimeChange::JvmtiError(
+                JvmtiErrorAddition::UnsupportedRedefinitionClassAttributeChanged
+            ))
+    );
+    assert!(
+        release_profile(19)
+            .unwrap()
+            .changes
+            .contains(&RuntimeChange::JvmtiError(
+                JvmtiErrorAddition::UnsupportedOperation
+            ))
+    );
 
-    assert!(release_profile(16)
-        .unwrap()
-        .changes
-        .contains(&RuntimeChange::NativeSource(
-            NativeSourceChange::NamedJvmtiStructureTags
-        )));
-    assert!(release_profile(21)
-        .unwrap()
-        .changes
-        .contains(&RuntimeChange::NativePolicy(
-            NativePolicyChange::DynamicAgentLoadingWarns
-        )));
-    assert!(release_profile(24)
-        .unwrap()
-        .changes
-        .contains(&RuntimeChange::NativePolicy(
-            NativePolicyChange::NativeLibraryLoadingRequiresEnabledAccess
-        )));
-    assert!(release_profile(24)
-        .unwrap()
-        .changes
-        .contains(&RuntimeChange::NativePolicy(
-            NativePolicyChange::TransformingAgentsCanInvalidateAotCache
-        )));
-    assert!(release_profile(26)
-        .unwrap()
-        .changes
-        .contains(&RuntimeChange::NativePolicy(
-            NativePolicyChange::JniFinalFieldMutationDiagnostics
-        )));
+    assert!(
+        release_profile(16)
+            .unwrap()
+            .changes
+            .contains(&RuntimeChange::NativeSource(
+                NativeSourceChange::NamedJvmtiStructureTags
+            ))
+    );
+    assert!(
+        release_profile(21)
+            .unwrap()
+            .changes
+            .contains(&RuntimeChange::NativePolicy(
+                NativePolicyChange::DynamicAgentLoadingWarns
+            ))
+    );
+    assert!(
+        release_profile(24)
+            .unwrap()
+            .changes
+            .contains(&RuntimeChange::NativePolicy(
+                NativePolicyChange::NativeLibraryLoadingRequiresEnabledAccess
+            ))
+    );
+    assert!(
+        release_profile(24)
+            .unwrap()
+            .changes
+            .contains(&RuntimeChange::NativePolicy(
+                NativePolicyChange::TransformingAgentsCanInvalidateAotCache
+            ))
+    );
+    assert!(
+        release_profile(26)
+            .unwrap()
+            .changes
+            .contains(&RuntimeChange::NativePolicy(
+                NativePolicyChange::JniFinalFieldMutationDiagnostics
+            ))
+    );
 }
 
 #[test]

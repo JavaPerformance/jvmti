@@ -8,6 +8,11 @@ This project follows SemVer with the following policy:
 4. Unsafe APIs are never silently changed; safety assumptions are documented explicitly.
 5. Feature-gated helper modules may grow faster, but feature behavior is still documented.
 6. New JDK table tails, reclaimed slots, and capability bits must be runtime-gated before access.
+7. Version 3.0 has an MSRV of Rust 1.85 and uses Edition 2024. Any 3.x MSRV
+   increase is a documented minor-release change, not an incidental CI update.
+8. Zero third-party crates across all features and development targets is part
+   of the 3.x product contract. A future dependency requires an explicit
+   changelog entry and supply-chain review.
 
 Version 2.3.x is the final source-compatible line for the old callback trait.
 Version 3.0 intentionally removes reduced callbacks, `*_with_jvmti` callbacks,

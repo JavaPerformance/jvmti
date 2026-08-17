@@ -7,7 +7,7 @@ use jvmti_bindings::callbacks::{
     MethodExitEvent,
 };
 use jvmti_bindings::sys::jvmti;
-use jvmti_bindings::{get_default_callbacks, jni, set_global_agent, Agent};
+use jvmti_bindings::{Agent, get_default_callbacks, jni, set_global_agent};
 
 static LOAD_ENV: AtomicUsize = AtomicUsize::new(0);
 static UNLOAD_ENV: AtomicUsize = AtomicUsize::new(0);

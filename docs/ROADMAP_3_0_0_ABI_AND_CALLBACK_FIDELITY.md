@@ -663,8 +663,10 @@ The current local implementation passes:
 - doctests and rustdoc with warnings denied;
 - `cargo publish --dry-run --allow-dirty` and a separate external-consumer
   release build;
-- `cargo +1.70.0 check --lib --all-features`, matching the declared MSRV for
-  every library feature;
+- `cargo +1.85.0 check --all-targets --all-features`, matching the declared
+  MSRV and covering every library, tool, test, example, and benchmark target;
+- `scripts/check-zero-dependencies.sh`, proving that every feature and
+  development target has zero third-party crate dependencies;
 - the pinned C/Rust ABI matrix for every feature release from JDK 8 through
   the current JDK 28 source snapshot; and
 - real callback delivery on seven installed JVMs spanning JDK 8, 11, 17, 21,

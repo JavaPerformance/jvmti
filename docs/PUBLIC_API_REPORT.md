@@ -65,6 +65,19 @@ Common `Jvmti` helper methods:
 14. `configure_heap_sampling_agent`
 15. `get_error_name_string`
 
+Allocation-free `JniEnv` name and signature methods:
+1. `find_class_cstr`
+2. `define_class_cstr`
+3. `throw_new_cstr`
+4. `new_string_utf_cstr`
+5. `get_method_id_cstr`
+6. `get_static_method_id_cstr`
+7. `get_field_id_cstr`
+8. `get_static_field_id_cstr`
+
+Each method accepts borrowed `&CStr` input. The existing `&str` convenience
+methods remain public and perform temporary conversion where required.
+
 ## `sys` Module
 
 1. `sys::jni` - Raw JNI types, constants, and function tables.
@@ -108,6 +121,10 @@ Feature-gated JVM embedding helpers (`embed` feature):
 5. `find_libjvm_verbose`
 6. `EmbedError`
 
+The implementation uses an in-tree Unix/Windows dynamic-library loader and
+adds no feature dependency. `JavaVm` owns the dynamic-library handle, JVM
+option strings, and native option table until after JVM destruction.
+
 ## `advanced` Module
 
 Feature-gated helpers (disabled by default):
@@ -118,5 +135,6 @@ Feature-gated helpers (disabled by default):
 1. `env` and top-level exports are intended to be stable.
 2. `sys` is a low-level mirror of JNI/JVMTI C headers.
 3. `advanced` is explicitly allowed to change more rapidly.
-4. The complete 2.x-to-3.0 source migration is documented in
+4. Normal, optional, build, and development dependency counts are all zero.
+5. The complete 2.x-to-3.0 source migration is documented in
    [Migrating From 2.x to 3.0](MIGRATING_2_TO_3.md).

@@ -15,6 +15,7 @@ We'll build an agent that:
 ## What You Should Know Already
 
 This guide assumes:
+- You use Rust 1.85 or newer (Edition 2024)
 - You know Rust basics (ownership, `Result`, traits)
 - You know what a JVM agent is (`-agentpath`)
 - You are comfortable debugging native code if needed

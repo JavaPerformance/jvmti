@@ -1,12 +1,13 @@
 //! Helpers for embedding a JVM inside a Rust process.
 //!
-//! This module is feature-gated behind `embed` to keep the core crate
-//! dependency-free by default.
+//! This module is feature-gated behind `embed`; its platform loader is
+//! implemented in-tree so enabling it does not add dependencies.
 
 use std::ffi::{CString, NulError};
 use std::path::{Path, PathBuf};
 use std::ptr;
 
+use crate::dynamic_library::DynamicLibrary;
 use crate::env::JniEnv;
 use crate::sys::jni;
 
@@ -189,16 +190,20 @@ impl JavaVmBuilder {
             })
             .collect();
 
-        let args = jni::JavaVMInitArgs {
-            version: self.version,
-            nOptions: opt_structs.len() as jni::jint,
-            options: if opt_structs.is_empty() {
-                ptr::null_mut()
-            } else {
-                opt_structs.as_mut_ptr()
-            },
-            ignoreUnrecognized: if self.ignore_unrecognized { 1 } else { 0 },
+        // Zero the complete C structure, including padding, before assigning
+        // fields. This keeps native diagnostics and tools from observing
+        // indeterminate bytes when a JVM copies the invocation arguments.
+        // SAFETY: Every field in `JavaVMInitArgs` is an integer or pointer, for
+        // which the all-zero representation is valid.
+        let mut args: jni::JavaVMInitArgs = unsafe { std::mem::zeroed() };
+        args.version = self.version;
+        args.nOptions = opt_structs.len() as jni::jint;
+        args.options = if opt_structs.is_empty() {
+            ptr::null_mut()
+        } else {
+            opt_structs.as_mut_ptr()
         };
+        args.ignoreUnrecognized = if self.ignore_unrecognized { 1 } else { 0 };
 
         (args, opt_structs)
     }
@@ -210,12 +215,14 @@ impl JavaVmBuilder {
     /// shared library remains loaded for the lifetime of the returned `JavaVm`.
     pub unsafe fn create_with(self, create: jni::JNI_CreateJavaVM) -> Result<JavaVm, jni::jint> {
         let mut this = self;
-        let (mut args, _opt_structs) = this.build_args();
+        let (mut args, option_structs) = this.build_args();
 
         let mut vm: *mut jni::JavaVM = ptr::null_mut();
         let mut env: *mut jni::JNIEnv = ptr::null_mut();
 
-        let res = create(&mut vm, &mut env, &mut args);
+        // SAFETY: Forwarded from this function's contract. All output pointers
+        // and the initialization arguments remain valid for the call.
+        let res = unsafe { create(&mut vm, &mut env, &mut args) };
         if res != jni::JNI_OK {
             return Err(res);
         }
@@ -227,26 +234,25 @@ impl JavaVmBuilder {
             vm,
             creator_env: env,
             destroyed: false,
+            _options: this.options,
+            _option_structs: option_structs,
             _lib: None,
         })
     }
 
     /// Create a JVM by dynamically loading `libjvm` from the given path.
     pub fn create_from_library<P: AsRef<Path>>(self, path: P) -> Result<JavaVm, EmbedError> {
-        let lib = unsafe {
-            libloading::Library::new(path.as_ref()).map_err(|e| EmbedError::Load(e.to_string()))?
-        };
+        let lib = DynamicLibrary::open(path.as_ref()).map_err(EmbedError::Load)?;
 
-        let create: libloading::Symbol<jni::JNI_CreateJavaVM> = unsafe {
-            lib.get(b"JNI_CreateJavaVM\0")
-                .map_err(|e| EmbedError::Load(e.to_string()))?
-        };
+        // SAFETY: `JNI_CreateJavaVM` has the JNI invocation API signature, and
+        // `lib` remains owned by the returned `JavaVm` until after destruction.
+        let create: jni::JNI_CreateJavaVM =
+            unsafe { lib.symbol(c"JNI_CreateJavaVM").map_err(EmbedError::Load)? };
 
-        let vm = unsafe { self.create_with(*create).map_err(EmbedError::Jni)? };
-        Ok(JavaVm {
-            _lib: Some(lib),
-            ..vm
-        })
+        // SAFETY: The symbol came from the still-live JVM library above.
+        let mut vm = unsafe { self.create_with(create).map_err(EmbedError::Jni)? };
+        vm._lib = Some(lib);
+        Ok(vm)
     }
 
     /// Create a JVM by locating `libjvm` from `JVM_LIB_PATH` or `JAVA_HOME`.
@@ -282,7 +288,7 @@ pub struct AttachedThread<'vm> {
     detach_on_drop: bool,
 }
 
-impl<'vm> AttachedThread<'vm> {
+impl AttachedThread<'_> {
     /// Borrow the current thread's JNI environment.
     pub fn env(&self) -> &JniEnv {
         &self.env
@@ -309,7 +315,12 @@ pub struct JavaVm {
     vm: *mut jni::JavaVM,
     creator_env: *mut jni::JNIEnv,
     destroyed: bool,
-    _lib: Option<libloading::Library>,
+    // Some JVM implementations continue to observe invocation-option storage
+    // during startup after `JNI_CreateJavaVM` returns. Keep both the strings
+    // and the pointer-bearing C array alive until after VM destruction.
+    _options: Vec<CString>,
+    _option_structs: Vec<jni::JavaVMOption>,
+    _lib: Option<DynamicLibrary>,
 }
 
 // JavaVM is the process-wide JNI invocation interface. It is valid to share
@@ -334,7 +345,7 @@ impl JavaVm {
     /// # Safety
     /// This is only valid on the thread that created the JVM.
     pub unsafe fn creator_env(&self) -> JniEnv {
-        JniEnv::from_raw(self.creator_env)
+        unsafe { JniEnv::from_raw(self.creator_env) }
     }
 
     /// Return the current thread's `JNIEnv*` if this thread is already attached.
@@ -479,5 +490,48 @@ impl Drop for JavaVm {
                 let _ = crate::jvm_call!(self.vm, DestroyJavaVM);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::ptr::NonNull;
+
+    unsafe extern "system" fn fake_create(
+        vm: *mut *mut jni::JavaVM,
+        env: *mut *mut jni::JNIEnv,
+        _args: *mut jni::JavaVMInitArgs,
+    ) -> jni::jint {
+        // The test forgets the resulting handle, so these non-null sentinels
+        // are never dereferenced or passed to a JVM operation.
+        unsafe {
+            *vm = NonNull::<jni::JavaVM>::dangling().as_ptr();
+            *env = NonNull::<jni::JNIEnv>::dangling().as_ptr();
+        }
+        jni::JNI_OK
+    }
+
+    #[test]
+    fn invocation_options_live_with_the_vm_handle() {
+        let builder = JavaVmBuilder::default()
+            .option("-Djvmti.bindings.option-lifetime=sentinel")
+            .expect("valid option");
+        // SAFETY: `fake_create` initializes non-null sentinel outputs and the
+        // resulting handle is forgotten before any VM operation or drop.
+        let vm = unsafe { builder.create_with(fake_create) }.expect("fake JVM creation");
+
+        assert_eq!(vm._options.len(), 1);
+        assert_eq!(vm._option_structs.len(), 1);
+        assert_eq!(
+            vm._options[0].as_c_str(),
+            c"-Djvmti.bindings.option-lifetime=sentinel"
+        );
+        assert_eq!(
+            vm._option_structs[0].optionString.cast_const(),
+            vm._options[0].as_ptr()
+        );
+
+        std::mem::forget(vm);
     }
 }

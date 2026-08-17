@@ -1,7 +1,7 @@
-use std::alloc::{alloc, dealloc, Layout};
+use std::alloc::{Layout, alloc, dealloc};
 use std::ptr;
-use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 
 use jvmti_bindings::env::Jvmti;
 use jvmti_bindings::sys::{jni, jvmti};

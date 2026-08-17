@@ -1,87 +1,98 @@
 # Benchmarks
 
-This repo uses Criterion for microbenchmarks.
+The benchmark targets use only the Rust standard library. They deliberately do
+not depend on Criterion, archive crates, plotting tools, or a global allocator.
+This keeps the measured parser path close to the code shipped to users and
+preserves the repository's zero-third-party-crate contract.
 
-## Run
+Benchmark results are machine-specific. Record the CPU, operating system, Rust
+version, power policy, and command line whenever publishing a number.
 
-```bash
-cargo bench
-```
+## Classfile Parser Microbenchmark
 
-If `gnuplot` is installed, Criterion will generate richer charts. Otherwise it will fall back to a built-in backend.
-
-## Streaming JAR Benchmark
-
-For an end-to-end benchmark (read + decompress + parse class files directly from a JAR), use the streaming tool:
+Run the fixed minimal-class parser benchmark with an optimized build:
 
 ```bash
-cargo run --features bench-tools --bin jar_parse_bench -- /path/to/app.jar
+cargo bench --bench classfile_parse
 ```
 
-This tool uses the optional `zip` dependency and is gated behind the `bench-tools` feature, so the library remains dependency-free by default.
+The harness performs a 250 ms warm-up followed by a two-second measurement and
+prints stable `key=value` fields:
 
-## Reports
-
-Criterion outputs HTML + SVG reports under:
-
-```
-target/criterion/report/index.html
-target/criterion/<bench_name>/report/index.html
-```
-
-Example chart paths for the `classfile_parse_min` benchmark:
-
-```
-target/criterion/classfile_parse_min/report/typical.svg
-target/criterion/classfile_parse_min/report/mean.svg
-target/criterion/classfile_parse_min/report/median.svg
-target/criterion/classfile_parse_min/report/slope.svg
-target/criterion/classfile_parse_min/report/regression.svg
-target/criterion/classfile_parse_min/report/pdf.svg
+```text
+benchmark=classfile_parse_min
+iterations=24720279
+elapsed_ms=2000.000
+ns_per_iteration=80.9
+iterations_per_second=12360139.2
 ```
 
-## Baselines
+The exact values above are illustrative, not a release guarantee. Capture
+several runs and compare medians rather than selecting one best run.
 
-You can capture and compare baselines:
+Example shell baseline:
 
 ```bash
-cargo bench -- --save-baseline main
-cargo bench -- --baseline main
+mkdir -p target/bench-results
+for run in 1 2 3 4 5; do
+  cargo bench --bench classfile_parse \
+    > "target/bench-results/classfile-${run}.txt"
+done
 ```
 
-## Recent Results (Local Machine)
+## JAR Or Class-Directory Corpus Benchmark
 
-These numbers are from 2026-02-05 and will vary by hardware and OS cache state. They are included as an example baseline.
+The corpus tool separates archive extraction from class parsing:
 
-Small JAR (extracted files):
-
-```
-jar=/root/vliss/OpeningHours-0.0.1-SNAPSHOT.jar
-class_files=121
-total_mb=0.438
-parse_time_ms=3.183 (warm cache)
+```bash
+cargo run --release --bin jar_parse_bench -- /path/to/application.jar
+cargo run --release --bin jar_parse_bench -- /path/to/extracted/classes
 ```
 
-Large JAR (extracted files):
+For a JAR input, the tool invokes the JDK `jar` executable found under
+`JAVA_HOME/bin` or on `PATH`, extracts into a unique temporary directory, then
+removes that directory on exit. Passing an already extracted directory removes
+archive-tool and decompression time from the parser measurement.
 
-```
-jar=/root/.local/share/JetBrains/Toolbox/apps/android-studio/lib/app.jar
-class_files=52040
-total_mb=222.578
-parse_time_ms=1293.089 (warm cache)
+Output includes:
+
+```text
+input=/path/to/application.jar
+class_files=1234
+parsed_ok=1234 failed=0
+total_mb=8.125
+extract_time_ms=84.221
+parse_time_ms=17.302
+total_time_ms=101.523
+ns_per_class=14021.1
+parse_mb_per_s=469.60
 ```
 
-Large JAR (unzip + parse estimate):
+Treat any non-zero `failed` count as a correctness failure before interpreting
+throughput. For apples-to-apples parser comparisons, pre-extract the JAR once
+and benchmark the directory so filesystem decompression does not dominate.
 
-```
-unzip_time=1.461s
-parse_time_ms=1293.089
-estimated_total=~2.75s
+## Performance-Sensitive JNI Calls
+
+Fixed class names, method names, field names, descriptors, and exception text
+can use the allocation-free `*_cstr` methods with Rust C string literals:
+
+```rust,ignore
+let class = jni.find_class_cstr(c"java/lang/String")?;
+let method = unsafe { jni.get_method_id_cstr(class, c"length", c"()I")? };
 ```
 
-Large JAR (cold cache parse, after `sync; echo 3 > /proc/sys/vm/drop_caches`):
+The existing `&str` methods remain ergonomic adapters and allocate only as
+needed to validate and NUL-terminate dynamic input. Keep conversion outside a
+high-frequency callback when the value is reusable.
 
-```
-parse_time_ms=2557.225
-mb_per_s=87.04
-```
+## Regression Discipline
+
+1. Run correctness tests before benchmarks.
+2. Use `--release` or Cargo's bench profile, never a debug binary.
+3. Pin the same Rust version and CPU power policy for before/after runs.
+4. Compare at least five runs and report the median plus range.
+5. Separate JAR extraction time from parser time.
+6. Keep benchmark inputs and their SHA-256 hashes with the result.
+7. Run `scripts/check-zero-dependencies.sh` so benchmark tooling cannot quietly
+   alter the dependency contract.

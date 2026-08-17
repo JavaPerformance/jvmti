@@ -1,5 +1,16 @@
 # Compatibility Matrix (JDK 8-28)
 
+## Rust Toolchain Versus JVM Runtime
+
+Version 3.0 requires Rust 1.85 or newer and uses Edition 2024. That requirement
+applies when compiling the Rust crate; it does not raise the minimum Java
+runtime. One resulting native agent can still run against the audited JDK 8-28
+matrix, subject to the runtime feature gates described below.
+
+The repository tests the declared Rust 1.85 floor and current stable Rust
+separately. Raising the MSRV is a deliberate compatibility change and must be
+recorded in the changelog and migration guide.
+
 Version 3.0 has an explicit compatibility profile for every Java feature
 release from JDK 8 through JDK 28. The proof is not based on selected LTS
 releases or on the assumption that an unchanged structure size means unchanged

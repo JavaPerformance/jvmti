@@ -25,13 +25,12 @@ impl Agent for MyAgent {
             return jni::JNI_ERR;
         }
 
-        let callbacks = get_default_callbacks();
-        if let Err(e) = jvmti.set_event_callbacks(callbacks) {
+        if let Err(e) = jvmti.set_default_agent_callbacks() {
             eprintln!("[agent] Failed to set callbacks: {:?}", e);
             return jni::JNI_ERR;
         }
 
-        if let Err(e) = jvmti.enable_events_global(&[jvmti::JVMTI_EVENT_CLASS_FILE_LOAD_HOOK]) {
+        if let Err(e) = jvmti.enable_class_file_load_hook_events() {
             eprintln!("[agent] Failed to enable events: {:?}", e);
             return jni::JNI_ERR;
         }
@@ -41,26 +40,19 @@ impl Agent for MyAgent {
 
     fn class_file_load_hook(
         &self,
-        _jni: *mut jni::JNIEnv,
-        _class_being_redefined: jni::jclass,
-        _loader: jni::jobject,
-        name: *const std::os::raw::c_char,
-        _protection_domain: jni::jobject,
-        class_data_len: jni::jint,
-        _class_data: *const u8,
-        _new_class_data_len: *mut jni::jint,
-        _new_class_data: *mut *mut u8,
+        _context: CallbackContext<'_>,
+        event: ClassFileLoadHookEvent<'_>,
     ) {
-        let class_name = if name.is_null() {
-            "<unknown>".to_string()
-        } else {
-            unsafe { std::ffi::CStr::from_ptr(name) }
-                .to_str()
-                .unwrap_or("<invalid>")
-                .to_string()
-        };
+        let class_name = event
+            .name()
+            .and_then(|name| name.to_str().ok())
+            .unwrap_or("<unknown>");
 
-        eprintln!("[agent] Loaded: {} ({} bytes)", class_name, class_data_len);
+        eprintln!(
+            "[agent] Loaded: {} ({} bytes)",
+            class_name,
+            event.class_data().len()
+        );
     }
 }
 

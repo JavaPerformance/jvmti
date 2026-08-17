@@ -7,9 +7,9 @@
 use crate::env::{JniEnv, Jvmti};
 use crate::sys::{jni, jvmti};
 use crate::version::{
-    jni_version_feature, jvmti_interface_feature, runtime_support, RuntimeSupport,
+    RuntimeSupport, jni_version_feature, jvmti_interface_feature, runtime_support,
 };
-use std::ffi::{c_char, c_void, CStr};
+use std::ffi::{CStr, c_char, c_void};
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::rc::Rc;
@@ -21,7 +21,7 @@ pub struct JvmtiRef<'callback> {
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
-impl<'callback> JvmtiRef<'callback> {
+impl JvmtiRef<'_> {
     pub(crate) unsafe fn from_raw(raw: *mut jvmti::jvmtiEnv) -> Option<Self> {
         if raw.is_null() {
             return None;
@@ -52,7 +52,7 @@ pub struct JniEnvRef<'callback> {
     _lifetime: PhantomData<&'callback mut jni::JNIEnv>,
 }
 
-impl<'callback> JniEnvRef<'callback> {
+impl JniEnvRef<'_> {
     pub(crate) unsafe fn from_raw(raw: *mut jni::JNIEnv) -> Option<Self> {
         if raw.is_null() {
             return None;

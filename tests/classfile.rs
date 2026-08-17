@@ -396,98 +396,154 @@ fn parses_all_attributes() {
     let classfile = ClassFile::parse(&bytes).expect("parse class file");
 
     let class_attrs = &classfile.attributes;
-    assert!(class_attrs
-        .iter()
-        .any(|a| matches!(a, AttributeInfo::SourceFile { .. })));
-    assert!(class_attrs
-        .iter()
-        .any(|a| matches!(a, AttributeInfo::SourceDebugExtension { .. })));
-    assert!(class_attrs
-        .iter()
-        .any(|a| matches!(a, AttributeInfo::Signature { .. })));
-    assert!(class_attrs
-        .iter()
-        .any(|a| matches!(a, AttributeInfo::Deprecated)));
-    assert!(class_attrs
-        .iter()
-        .any(|a| matches!(a, AttributeInfo::Synthetic)));
-    assert!(class_attrs
-        .iter()
-        .any(|a| matches!(a, AttributeInfo::RuntimeVisibleAnnotations { .. })));
-    assert!(class_attrs
-        .iter()
-        .any(|a| matches!(a, AttributeInfo::RuntimeInvisibleAnnotations { .. })));
-    assert!(class_attrs
-        .iter()
-        .any(|a| matches!(a, AttributeInfo::RuntimeVisibleTypeAnnotations { .. })));
-    assert!(class_attrs
-        .iter()
-        .any(|a| matches!(a, AttributeInfo::RuntimeInvisibleTypeAnnotations { .. })));
-    assert!(class_attrs
-        .iter()
-        .any(|a| matches!(a, AttributeInfo::BootstrapMethods { .. })));
-    assert!(class_attrs
-        .iter()
-        .any(|a| matches!(a, AttributeInfo::InnerClasses { .. })));
-    assert!(class_attrs
-        .iter()
-        .any(|a| matches!(a, AttributeInfo::EnclosingMethod { .. })));
-    assert!(class_attrs
-        .iter()
-        .any(|a| matches!(a, AttributeInfo::Module { .. })));
-    assert!(class_attrs
-        .iter()
-        .any(|a| matches!(a, AttributeInfo::ModulePackages { .. })));
-    assert!(class_attrs
-        .iter()
-        .any(|a| matches!(a, AttributeInfo::ModuleMainClass { .. })));
-    assert!(class_attrs
-        .iter()
-        .any(|a| matches!(a, AttributeInfo::ModuleHashes { .. })));
-    assert!(class_attrs
-        .iter()
-        .any(|a| matches!(a, AttributeInfo::ModuleTarget { .. })));
-    assert!(class_attrs
-        .iter()
-        .any(|a| matches!(a, AttributeInfo::ModuleResolution { .. })));
-    assert!(class_attrs
-        .iter()
-        .any(|a| matches!(a, AttributeInfo::NestHost { .. })));
-    assert!(class_attrs
-        .iter()
-        .any(|a| matches!(a, AttributeInfo::NestMembers { .. })));
-    assert!(class_attrs
-        .iter()
-        .any(|a| matches!(a, AttributeInfo::Record { .. })));
-    assert!(class_attrs
-        .iter()
-        .any(|a| matches!(a, AttributeInfo::PermittedSubclasses { .. })));
-    assert!(class_attrs
-        .iter()
-        .any(|a| matches!(a, AttributeInfo::Unknown { .. })));
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::SourceFile { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::SourceDebugExtension { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::Signature { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::Deprecated))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::Synthetic))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::RuntimeVisibleAnnotations { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::RuntimeInvisibleAnnotations { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::RuntimeVisibleTypeAnnotations { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::RuntimeInvisibleTypeAnnotations { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::BootstrapMethods { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::InnerClasses { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::EnclosingMethod { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::Module { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::ModulePackages { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::ModuleMainClass { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::ModuleHashes { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::ModuleTarget { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::ModuleResolution { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::NestHost { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::NestMembers { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::Record { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::PermittedSubclasses { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::Unknown { .. }))
+    );
 
     let field_attrs = &classfile.fields[0].attributes;
-    assert!(field_attrs
-        .iter()
-        .any(|a| matches!(a, AttributeInfo::ConstantValue { .. })));
+    assert!(
+        field_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::ConstantValue { .. }))
+    );
 
     let method_attrs = &classfile.methods[0].attributes;
-    assert!(method_attrs
-        .iter()
-        .any(|a| matches!(a, AttributeInfo::Exceptions { .. })));
-    assert!(method_attrs
-        .iter()
-        .any(|a| matches!(a, AttributeInfo::MethodParameters { .. })));
-    assert!(method_attrs
-        .iter()
-        .any(|a| matches!(a, AttributeInfo::RuntimeVisibleParameterAnnotations { .. })));
+    assert!(
+        method_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::Exceptions { .. }))
+    );
+    assert!(
+        method_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::MethodParameters { .. }))
+    );
+    assert!(
+        method_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::RuntimeVisibleParameterAnnotations { .. }))
+    );
     assert!(method_attrs.iter().any(|a| matches!(
         a,
         AttributeInfo::RuntimeInvisibleParameterAnnotations { .. }
     )));
-    assert!(method_attrs
-        .iter()
-        .any(|a| matches!(a, AttributeInfo::AnnotationDefault { .. })));
+    assert!(
+        method_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::AnnotationDefault { .. }))
+    );
 
     let code_attr = method_attrs
         .iter()
@@ -500,20 +556,46 @@ fn parses_all_attributes() {
         })
         .expect("code attr");
 
-    assert!(code_attr
-        .attributes
-        .iter()
-        .any(|a| matches!(a, AttributeInfo::LineNumberTable { .. })));
-    assert!(code_attr
-        .attributes
-        .iter()
-        .any(|a| matches!(a, AttributeInfo::LocalVariableTable { .. })));
-    assert!(code_attr
-        .attributes
-        .iter()
-        .any(|a| matches!(a, AttributeInfo::LocalVariableTypeTable { .. })));
-    assert!(code_attr
-        .attributes
-        .iter()
-        .any(|a| matches!(a, AttributeInfo::StackMapTable { .. })));
+    assert!(
+        code_attr
+            .attributes
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::LineNumberTable { .. }))
+    );
+    assert!(
+        code_attr
+            .attributes
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::LocalVariableTable { .. }))
+    );
+    assert!(
+        code_attr
+            .attributes
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::LocalVariableTypeTable { .. }))
+    );
+    assert!(
+        code_attr
+            .attributes
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::StackMapTable { .. }))
+    );
+}
+
+#[test]
+fn every_truncated_prefix_fails_without_panicking() {
+    let bytes = build_test_class();
+    for end in 0..bytes.len() {
+        assert!(
+            ClassFile::parse(&bytes[..end]).is_err(),
+            "truncated class unexpectedly parsed at byte {end}"
+        );
+    }
+}
+
+#[test]
+fn trailing_bytes_are_rejected() {
+    let mut bytes = build_test_class();
+    bytes.extend_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
+    assert!(ClassFile::parse(&bytes).is_err());
 }

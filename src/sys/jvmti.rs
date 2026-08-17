@@ -19,8 +19,8 @@
 #![allow(non_snake_case)]
 
 use crate::sys::jni::{
-    jboolean, jchar, jclass, jdouble, jfieldID, jfloat, jint, jlong, jmethodID, jobject, jthread,
-    jvalue, JNIEnv, JNINativeInterface_,
+    JNIEnv, JNINativeInterface_, jboolean, jchar, jclass, jdouble, jfieldID, jfloat, jint, jlong,
+    jmethodID, jobject, jthread, jvalue,
 };
 use std::fmt;
 use std::os::raw::{c_uchar, c_void};
@@ -2372,9 +2372,9 @@ pub struct jvmtiEventCallbacks {
     pub VirtualThreadEnd: Option<JvmtiVirtualThreadEndFn>,
 }
 
-// Rust 1.70 does not implement `Default` for raw pointers. These C structures
-// contain only integers, pointers, and nullable function pointers, so their C
-// zero initializer is a valid default on every supported Rust compiler.
+// Raw pointers do not implement `Default`. These C structures contain only
+// integers, pointers, and nullable function pointers, so their C zero
+// initializer is valid on every supported target.
 macro_rules! impl_c_zero_default {
     ($($type:ty),+ $(,)?) => {
         $(

@@ -13,6 +13,11 @@ compatibility line for the old callback trait.
 3. Keep `env` APIs stable and ergonomic.
 4. Keep `sys` in sync with upstream JNI/JVMTI headers.
 5. Feature-gated modules may grow faster, but must document behavior changes.
+6. Rust 1.85 is the 3.0 MSRV. A later 3.x MSRV increase requires a documented
+   minor release, a concrete safety or maintenance benefit, and CI coverage for
+   the new floor.
+7. The zero-third-party-crate contract covers every feature and development
+   target. Adding a crate requires an explicit public policy change.
 
 ## Review Checklist for Any Public API Change
 

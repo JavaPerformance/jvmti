@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use jvmti_bindings::agent::AgentLoadContext;
 use jvmti_bindings::callbacks::*;
 use jvmti_bindings::sys::jvmti;
-use jvmti_bindings::{get_default_callbacks, jni, set_global_agent, Agent};
+use jvmti_bindings::{Agent, get_default_callbacks, jni, set_global_agent};
 
 static SEEN: AtomicU64 = AtomicU64::new(0);
 static PANIC_NEXT_METHOD_ENTRY: AtomicBool = AtomicBool::new(false);

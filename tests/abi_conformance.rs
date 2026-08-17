@@ -6,23 +6,14 @@
 use std::collections::HashMap;
 use std::env;
 use std::ffi::OsString;
+use std::fmt::Write;
 use std::fs;
-use std::mem::{align_of, size_of, MaybeUninit};
+use std::mem::{align_of, offset_of, size_of};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::ptr::addr_of;
 
 use jvmti_bindings::sys::{jni, jvmti};
 use jvmti_bindings::version::release_profile;
-
-macro_rules! offset_of {
-    ($ty:ty, $field:ident) => {{
-        let value = MaybeUninit::<$ty>::uninit();
-        let base = value.as_ptr();
-        let field = unsafe { addr_of!((*base).$field) };
-        field as usize - base as usize
-    }};
-}
 
 fn rust_layout(feature: u16) -> HashMap<&'static str, usize> {
     let mut values = HashMap::new();
@@ -257,7 +248,10 @@ fn capability_bytes(configure: impl FnOnce(&mut jvmti::jvmtiCapabilities)) -> St
             size_of::<jvmti::jvmtiCapabilities>(),
         )
     };
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    bytes.iter().fold(String::new(), |mut output, byte| {
+        write!(output, "{byte:02x}").expect("writing to a String cannot fail");
+        output
+    })
 }
 
 fn compile_probe(include_dir: &Path, platform_include_dir: &Path, feature: u32) -> PathBuf {

@@ -1,17 +1,6 @@
-use std::mem::{align_of, size_of, MaybeUninit};
-use std::ptr::addr_of;
+use std::mem::{align_of, offset_of, size_of};
 
 use jvmti_bindings::sys::jvmti;
-
-macro_rules! offset_of {
-    ($ty:ty, $field:ident) => {{
-        let value = MaybeUninit::<$ty>::uninit();
-        let base = value.as_ptr();
-        // `addr_of!` forms the field address without reading uninitialized data.
-        let field = unsafe { addr_of!((*base).$field) };
-        field as usize - base as usize
-    }};
-}
 
 #[test]
 fn event_ids_match_the_jvmti_specification() {

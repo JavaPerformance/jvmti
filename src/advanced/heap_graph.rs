@@ -35,7 +35,11 @@ unsafe extern "system" fn tag_all_objects_cb(
     if tag_ptr.is_null() || user_data.is_null() {
         return jvmti::JVMTI_ITERATION_CONTINUE;
     }
-    let tagger = &mut *(user_data as *mut Tagger);
+    // SAFETY: JVM TI supplies both pointers for the duration of this
+    // synchronous callback, and the caller passes `user_data` as a `Tagger`.
+    let tagger = unsafe { &mut *user_data.cast::<Tagger>() };
+    // SAFETY: The null check above and JVM TI callback contract make `tag_ptr`
+    // readable and writable for this invocation.
     if unsafe { *tag_ptr } == 0 {
         unsafe { *tag_ptr = tagger.next };
         tagger.next += 1;
@@ -118,13 +122,17 @@ pub unsafe fn build_heap_graph(
         ..Default::default()
     };
 
-    jvmti_env.follow_references(
-        heap_filter,
-        ptr::null_mut(),
-        initial_object,
-        &callbacks,
-        &mut collector as *mut EdgeCollector as *const c_void,
-    )?;
+    // SAFETY: Forwarded from this function's contract. The callbacks and
+    // collector remain alive for the complete synchronous traversal.
+    unsafe {
+        jvmti_env.follow_references(
+            heap_filter,
+            ptr::null_mut(),
+            initial_object,
+            &callbacks,
+            &mut collector as *mut EdgeCollector as *const c_void,
+        )?;
+    }
 
     Ok(HeapGraph {
         edges: collector.edges,

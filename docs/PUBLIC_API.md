@@ -28,9 +28,30 @@ Common high-level helpers:
 4. `Jvmti::configure_*_agent` presets for common agent workflows
 5. `jni::result_name`, `jni::describe_result`, and `jvmti::error_name` diagnostics
 
+Allocation-free JNI name and signature helpers:
+1. `JniEnv::find_class_cstr`
+2. `JniEnv::define_class_cstr`
+3. `JniEnv::throw_new_cstr`
+4. `JniEnv::new_string_utf_cstr`
+5. `JniEnv::get_method_id_cstr`
+6. `JniEnv::get_static_method_id_cstr`
+7. `JniEnv::get_field_id_cstr`
+8. `JniEnv::get_static_field_id_cstr`
+
+The corresponding `&str` methods remain available as convenience adapters. Use
+the `&CStr` variants with `c"..."` literals or cached names in callback and
+lookup hot paths to avoid temporary `CString` allocation and validation.
+
+Dependency contract:
+1. The crate has no third-party normal, optional, build, or development dependencies.
+2. Enabling `embed` uses the in-tree platform dynamic loader; it does not add a loader crate.
+3. Benchmarks and tests use the Rust standard library and installed JDK tools.
+
 Stability notes:
 1. `sys` follows the JVMTI/JNI C headers and may grow with new JDK versions.
 2. `env` is the recommended API for most users and aims for stability.
-3. `embed` is feature-gated but intended for stable JVM embedding workflows.
+3. `embed` is feature-gated but intended for stable JVM embedding workflows; a
+   `JavaVm` keeps the loaded library and JVM option storage alive for the VM's
+   full lifetime.
 4. `advanced` APIs can change faster and are feature-gated.
 5. Consumers upgrading from 2.x must follow the callback, ownership, unsafe-operation, and raw-ABI mappings in [Migrating From 2.x to 3.0](MIGRATING_2_TO_3.md).

@@ -60,7 +60,7 @@ C++ is the traditional choice, but Rust offers compelling advantages:
 - **Memory safety without GC** — JVMTI agents run inside the JVM process; a segfault kills the application
 - **Fearless concurrency** — JVMTI callbacks fire from multiple threads simultaneously
 - **Zero-cost abstractions** — RAII guards and Result types add safety without runtime overhead
-- **No runtime dependencies by default** — Core JNI/JVMTI bindings need no external Rust crates; optional helpers are feature-gated
+- **No third-party crates** — Normal builds, optional features, tests, tools, and benchmarks use only this crate and the Rust standard library
 - **Modern tooling** — Cargo, docs.rs, and crates.io beat Makefiles and manual distribution
 
 Java agents (`java.lang.instrument`) are simpler but can't access low-level features like heap iteration, breakpoints, or raw bytecode hooks.
@@ -72,7 +72,7 @@ Java agents (`java.lang.instrument`) are simpler but can't access low-level feat
 | **Explicit safety model** | Unsafe operations centralized; APIs return `Result` |
 | **Complete surface** | Complete JDK 28 JNI and JVM TI tables, mapped to Rust types |
 | **Agent-first ergonomics** | Structured callbacks, capability management, RAII resources |
-| **No hidden dependencies** | No bindgen, no build-time JVM, no global allocators; optional helper deps are feature-gated |
+| **No hidden dependencies** | No bindgen, no build-time JVM, no global allocators, and no third-party crates in any Cargo dependency graph |
 | **Long-term compatibility** | ABI-verified against OpenJDK headers, JDK 8 through current JDK 28 |
 
 ## Safety and FFI
@@ -93,6 +93,12 @@ The supported public surface is intentionally small. For most users:
 3. Use `sys` only for raw FFI work.
 
 Details: `docs/PUBLIC_API.md`.
+
+## Toolchain Contract
+
+Version 3.0 requires Rust 1.85 or newer and uses Edition 2024. This is a source
+toolchain requirement only: the generated native agent ABI remains compatible
+with the supported JDK 8-28 runtime matrix.
 
 ## Raw FFI Access
 
@@ -304,7 +310,23 @@ std::thread::scope(|s| {
 vm.destroy()?;
 ```
 
-The `embed` feature uses `libloading`; the core crate remains dependency-free by default. See `docs/EMBEDDING.md` and `examples/embed.rs` for details.
+The `embed` feature uses the crate's small platform loader (`dlopen`/`dlsym` on
+Unix and `LoadLibraryW`/`GetProcAddress` on Windows). It adds no crate
+dependency. See `docs/EMBEDDING.md` and `examples/embed.rs` for details.
+
+## Allocation-Free JNI Names
+
+The familiar `&str` JNI helpers remain convenient adapters. Hot paths can avoid
+repeated `CString` allocation by passing a prevalidated `&CStr`:
+
+```rust,ignore
+let string_class = jni.find_class_cstr(c"java/lang/String")?;
+let length = unsafe { jni.get_method_id_cstr(string_class, c"length", c"()I")? };
+```
+
+Use the `*_cstr` methods for fixed class names, member names, and descriptors in
+high-frequency callbacks. The `&str` variants retain the same behavior and are
+appropriate when names are dynamic or the call is not performance-sensitive.
 
 ## Examples
 
@@ -502,7 +524,8 @@ access to table tails, reclaimed slots, and capability bits on older JVMs.
 | API stability | 3.0 candidate; subsequent changes follow SemVer |
 | JVMTI coverage | 156/156 (100%) |
 | JNI coverage | Complete through current JDK 28 (237 table slots) |
-| Dependencies | Zero by default; optional `embed` and `bench-tools` features |
+| Dependencies | Zero third-party crates across all features and development targets |
+| Rust toolchain | Rust 1.85+; Edition 2024 |
 | Testing | Classfile parser, doctests, all-feature builds, example agents |
 
 ## Examples
@@ -528,7 +551,7 @@ cargo build --release --example class_logger
 - [**API Report Script**](scripts/public_api_report.sh) — Regenerate the report with rustdoc JSON
 - [**Changelog**](CHANGELOG.md) — Release notes and breaking changes
 - [**Comparison With Alternatives**](docs/COMPARISON.md) — Feature parity and positioning
-- [**Benchmarks**](docs/BENCHMARKS.md) — How to run and view Criterion reports
+- [**Benchmarks**](docs/BENCHMARKS.md) — Dependency-free parser microbenchmarks and JAR corpus measurements
 - [**Embedding A JVM**](docs/EMBEDDING.md) — Start a JVM from Rust and attach threads
 - [**Dynamic Attach**](docs/ATTACH.md) — Agent_OnAttach example and notes
 - [**Safety and FFI Checklist**](docs/SAFETY.md) — Safety rules and audit checklist

@@ -24,3 +24,12 @@ fn default_builder_is_available_for_java8_baseline() {
         .expect("valid option")
         .ignore_unrecognized(true);
 }
+
+#[test]
+fn missing_library_reports_a_loader_error() {
+    let error = match JavaVmBuilder::default().create_from_library("/definitely/not/a/libjvm.so") {
+        Ok(_) => panic!("a missing library must fail"),
+        Err(error) => error,
+    };
+    assert!(matches!(error, EmbedError::Load(_)));
+}

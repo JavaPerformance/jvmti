@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use jvmti_bindings::agent::AgentLoadContext;
 use jvmti_bindings::sys::jni;
-use jvmti_bindings::{Agent, __agent_on_load};
+use jvmti_bindings::{__agent_on_load, Agent};
 
 static PANICS: AtomicUsize = AtomicUsize::new(0);
 

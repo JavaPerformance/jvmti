@@ -3,7 +3,7 @@
 use crate::env::Jvmti;
 use crate::sys::jni;
 use std::borrow::Cow;
-use std::ffi::{c_char, c_void, CStr};
+use std::ffi::{CStr, c_char, c_void};
 use std::marker::PhantomData;
 use std::rc::Rc;
 
@@ -18,7 +18,7 @@ pub struct JavaVmRef<'callback> {
     _not_send_sync: PhantomData<Rc<()>>,
 }
 
-impl<'callback> JavaVmRef<'callback> {
+impl JavaVmRef<'_> {
     /// Construct a callback-scoped VM reference from the JVM entry-point
     /// argument.
     ///
