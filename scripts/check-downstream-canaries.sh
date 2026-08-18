@@ -26,6 +26,11 @@ cat >>"$embed_work/Cargo.toml" <<EOF
 [patch.crates-io]
 jvmti-bindings = { path = "$package_source" }
 EOF
+# Resolve the staged path override before enforcing the immutable consumer
+# build. This keeps a previous release's checked-in template lock from making
+# the next patch release fail for the wrong reason.
+CARGO_TARGET_DIR="$embed_build" cargo +1.85.0 generate-lockfile \
+    --offline --manifest-path "$embed_work/Cargo.toml"
 CARGO_TARGET_DIR="$embed_build" cargo +1.85.0 check \
     --locked --manifest-path "$embed_work/Cargo.toml"
 

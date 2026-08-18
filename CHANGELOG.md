@@ -1,5 +1,18 @@
 # Changelog
 
+## 3.0.1
+
+Documentation and examples update. The example suite grows from 13 to 35
+programs, covering lifecycle, diagnostics, watchpoints, breakpoints, JNI,
+class-file parsing, JIT events, and standalone Minecraft-oriented templates.
+Current documentation also uses attribution-neutral wording. There are no
+library API, ABI, runtime-behavior, safety-contract, dependency, or
+minimum-toolchain changes from 3.0.0.
+
+The packaged-consumer release gate now refreshes its staged path-override lock
+before enforcing a locked build, preventing a previous patch version in the
+template lock from producing a false release failure.
+
 ## 3.0.0
 
 ### Breaking changes

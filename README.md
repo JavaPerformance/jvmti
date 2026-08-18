@@ -393,16 +393,12 @@ round trip.
 
 ## Examples
 
-Included examples (build as `cdylib` agents):
-1. `examples/minimal.rs`
-2. `examples/class_logger.rs`
-3. `examples/profiler.rs`
-4. `examples/tracer.rs`
-5. `examples/heap_sampler.rs`
-6. `examples/attach_logger.rs` (dynamic attach via `Agent_OnAttach`)
-
-Embedding example (binary):
-`examples/embed.rs` (run with `cargo run --example embed --features embed`)
+The repository includes 35 compilable examples covering agent lifecycle,
+threads and virtual threads, exceptions, monitors, GC and allocation events,
+JIT/native events, field watchpoints, breakpoints, JNI local-reference
+management, class-file parsing, embedding, performance proofs, and standalone
+Minecraft-oriented templates. See the [examples cookbook](examples/README.md)
+for the complete index, required JDK capabilities, options, and commands.
 
 ## Agent Starter Template
 
@@ -609,7 +605,12 @@ cargo build --release --example method_counter
 
 # Class logger — logs every class load
 cargo build --release --example class_logger
+
+# Minecraft class-load activity (standalone public-API template)
+cargo build --release --example minecraft_class_activity
 ```
+
+See [examples/README.md](examples/README.md) for all 35 examples.
 
 ## Documentation
 
