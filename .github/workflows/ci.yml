@@ -100,7 +100,7 @@ jobs:
         run: |
           rustup toolchain install nightly-2026-08-17 --profile minimal
           cargo +stable install cargo-public-api --version 0.52.0 --locked
-          cargo +stable install cargo-semver-checks --version 0.42.0 --locked
+          cargo +stable install cargo-semver-checks --version 0.50.0 --locked
       - name: Compare with the reviewed candidate baseline
         run: scripts/check-public-api-baseline.sh
       - name: Enforce compatibility with tagged 3.0.0 when available

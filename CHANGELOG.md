@@ -11,7 +11,8 @@ minimum-toolchain changes from 3.0.0.
 
 The packaged-consumer release gate now refreshes its staged path-override lock
 before enforcing a locked build, preventing a previous patch version in the
-template lock from producing a false release failure.
+template lock from producing a false release failure. CI also uses a SemVer
+checker release that understands the current stable rustdoc format.
 
 ## 3.0.0
 
