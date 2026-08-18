@@ -585,10 +585,9 @@ reclaimed slot, or newly consumed capability bit.
 
 The 3.0 ABI is verified against pinned OpenJDK source/header snapshots for every
 feature release from JDK 8 through the identified JDK 28 build 11 source. Real
-callback delivery has been exercised on installed JVMs through JDK 27. JDK 28
-value-object behavior remains preview work and requires the specialized live
-preview-runtime test before 3.0 publication; it is not described as final Java
-SE 28 behavior.
+callback delivery has been exercised on installed JVMs through JDK 28, with the
+JDK 28 matrix using preview runtime build `28+7`. Preview value-object behavior
+is not described as final Java SE 28 behavior.
 
 One Rust layout is used across supported JVMs. Calls read only the function-table
 prefix verified for the negotiated runtime. `release_profile(jdk)` exposes the

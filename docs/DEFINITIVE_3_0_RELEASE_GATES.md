@@ -94,7 +94,7 @@ The release must keep all of these gates:
     behavior. They prove no second release after success and one best-effort
     retry after an observable explicit-release failure.
 15. Installed JDK class-file corpora parse with zero failures. The current
-    evidence is 159,591 classes across complete JDK 8, 11, 17, 21, 25, and 27
+    evidence is 186,968 classes across complete JDK 8, 11, 17, 21, 25, 27, and 28
     runtime images. The OpenJDK source fetch cache is keyed by the manifest's
     feature, tag, and immutable commit rather than only by feature number.
 16. `scripts/check-wrapper-forwarding.py` fails closed if any of the 237 direct
@@ -182,9 +182,10 @@ Valgrind is not a claimed gate on a host where Valgrind cannot execute a trivial
 binary. Sanitizer evidence is additive and must be reported with its actual
 platform/runtime scope rather than treated as universal proof.
 
-JDK 28 remains a pinned current-source ABI target until its release line and
-preview behavior are final. A specialized live preview-runtime test is required
-before making runtime-semantic claims about value objects.
+JDK 28 build `28+7` has passed the live preview-runtime matrix recorded in
+`docs/JDK_28_LIVE_PROOF_2026-08-18.md`. Preview value-object behavior is still
+not described as final until its release line and semantics are final; the
+specialized proof establishes the documented preview-runtime scope only.
 
 ## 3.x Compatibility Discipline
 

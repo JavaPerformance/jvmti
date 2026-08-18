@@ -1,4 +1,4 @@
-# Compatibility Matrix (JDK 8-28 Source ABI; Live Through JDK 27)
+# Compatibility Matrix (JDK 8-28 Source ABI And Live Runtime)
 
 ## Rust Toolchain Versus JVM Runtime
 
@@ -6,8 +6,9 @@ Version 3.0 requires Rust 1.85 or newer and uses Edition 2024. That requirement
 applies when compiling the Rust crate; it does not raise the minimum Java
 runtime. One resulting native agent uses the audited JDK 8-28 table prefixes,
 subject to the runtime feature gates described below. Live callback delivery
-has been exercised on installed JDK 8, 11, 17, 21, 25, and 27 runtimes. JDK 28
-is source/ABI evidence plus preview design work, not yet a live runtime claim.
+has been exercised on installed JDK 8, 11, 17, 21, 25, 27, and 28 runtimes.
+JDK 28 evidence uses a preview `28+7` runtime; preview value-object behavior is
+not described as final Java SE 28 behavior.
 
 The repository tests the declared Rust 1.85 floor and current stable Rust
 separately. Raising the MSRV is a deliberate compatibility change and must be
@@ -165,6 +166,10 @@ scripts/prove-repeated-attach-live.sh
 scripts/prove-heap-graph-live.sh
 scripts/prove-callback-allocation-free.sh
 ```
+
+The exact JDK 28 runtime identity, checksums, commands, results, and claim
+boundary are recorded in
+[`JDK_28_LIVE_PROOF_2026-08-18.md`](JDK_28_LIVE_PROOF_2026-08-18.md).
 
 The external-header test is opt-in so crates.io consumers do not need a local
 JDK or C compiler merely to build the crate. Repository conformance CI uses an

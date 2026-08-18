@@ -73,7 +73,7 @@ Java agents (`java.lang.instrument`) are simpler but can't access low-level feat
 | **Complete surface** | Complete JDK 28 JNI and JVM TI tables, mapped to Rust types |
 | **Agent-first ergonomics** | Structured callbacks, capability management, RAII resources |
 | **No hidden dependencies** | Consumers need no bindgen or build-time JVM, no global allocator is installed, and no third-party crate appears in any Cargo dependency graph |
-| **Long-term compatibility** | Source-ABI verified against pinned OpenJDK 8-28 revisions; live callback-tested on installed runtimes through JDK 27 |
+| **Long-term compatibility** | Source-ABI verified against pinned OpenJDK 8-28 revisions; live callback-tested on installed runtimes through JDK 28 preview |
 
 ## Safety and FFI
 
@@ -99,8 +99,8 @@ Details: `docs/PUBLIC_API.md`.
 Version 3.0 requires Rust 1.85 or newer and uses Edition 2024. This is a source
 toolchain requirement only: the generated native agent uses runtime-gated table
 prefixes source-verified for JDK 8-28. Live callback delivery is verified on
-installed runtimes through JDK 27; JDK 28 preview semantics remain a release
-gate rather than a completed runtime claim.
+installed runtimes through JDK 28. The JDK 28 run used preview build `28+7`, so
+preview value-object behavior is not described as final Java SE 28 behavior.
 
 ## Raw FFI Access
 
@@ -566,7 +566,7 @@ eprintln!("jvmti={}", jvmti::error_name(jvmti::jvmtiError::MUST_POSSESS_CAPABILI
 | 9-18 | ✅ Every release ABI-verified | Modules, heap sampling, errors, and semantic/source-only changes |
 | 19-23 | ✅ Every release ABI-verified | Preview then final virtual-thread JNI/JVM TI surface |
 | 24-27 | ✅ Every release ABI-verified | Long modified-UTF-8 length, native policy changes, `ClearAllFramePops` |
-| 28 | ✅ Pinned source-header verified | Preview value-object identity/capability surface |
+| 28 | ✅ Source ABI and live preview-runtime verified | Preview value-object identity/capability surface |
 
 The latest Rust layout is compared with C headers for every JDK feature release
 from 8 through 28. The release ledger separately records table prefixes,
@@ -580,7 +580,7 @@ access to table tails, reclaimed slots, and capability bits on older JVMs.
 |--------|--------|
 | API stability | 3.0 candidate; subsequent changes follow SemVer |
 | JVMTI coverage | 156/156 (100%) |
-| JNI coverage | Complete through pinned JDK 28 source (237 table slots); live runtime evidence through JDK 27 |
+| JNI coverage | Complete through pinned JDK 28 source (237 table slots); live preview-runtime evidence through JDK 28 |
 | Dependencies | Zero third-party crates across all features and development targets |
 | Rust toolchain | Rust 1.85+; Edition 2024 |
 | Testing | Classfile parser, doctests, all-feature builds, example agents |
@@ -608,13 +608,15 @@ cargo build --release --example class_logger
 - [**API Report Script**](scripts/public_api_report.sh) — Regenerate the report with rustdoc JSON
 - [**Changelog**](CHANGELOG.md) — Release notes and breaking changes
 - [**Comparison With Alternatives**](docs/COMPARISON.md) — Feature parity and positioning
-- [**Benchmarks**](docs/BENCHMARKS.md) — Dependency-free parser microbenchmarks and JAR corpus measurements
+- [**Benchmarks**](docs/BENCHMARKS.md) — Dependency-free parser, callback-dispatch, and allocation measurements
+- [**3.0 Performance Reference**](docs/PERFORMANCE_REFERENCE_3_0.md) — Concise raw-C comparison, callback throughput, allocation proof, and downstream dogfood status
 - [**Embedding A JVM**](docs/EMBEDDING.md) — Start a JVM from Rust and attach threads
 - [**Dynamic Attach**](docs/ATTACH.md) — Agent_OnAttach example and notes
 - [**Safety and FFI Checklist**](docs/SAFETY.md) — Safety rules and audit checklist
 - [**Independent Unsafe/FFI Review**](docs/UNSAFE_FFI_REVIEW.md) — reviewer scope and acceptance record
 - [**Pitfalls and Footguns**](docs/PITFALLS.md) — Common JVMTI/JNI traps
 - [**Compatibility Matrix**](docs/COMPATIBILITY.md) — JDK 8-28 coverage and JDK 29 gate
+- [**JDK 28 Live Proof**](docs/JDK_28_LIVE_PROOF_2026-08-18.md) — Exact preview runtime identity, live semantic matrix, and claim boundary
 - [**Versioning Policy**](docs/VERSIONING.md) — API stability and SemVer plan
 - [**Release Procedure**](docs/RELEASING.md) — clean candidate, attestations, SBOM, and 3.x compatibility
 - [**Definitive 3.0 Release Gates**](docs/DEFINITIVE_3_0_RELEASE_GATES.md) — mechanical ABI, lifecycle, ownership, and publication criteria

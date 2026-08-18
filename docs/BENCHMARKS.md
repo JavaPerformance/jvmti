@@ -85,13 +85,14 @@ scripts/check-classfile-corpus.sh \
   /opt/openjdk-bin-17.0.19_p10 \
   /opt/openjdk-bin-21.0.11_p10 \
   /opt/openjdk-bin-25.0.3_p9 \
-  /opt/openjdk-bin-27_alpha20
+  /opt/openjdk-bin-27_alpha20 \
+  /usr/lib64/openjdk-28
 ```
 
-The 2026-08-18 release-candidate run parsed 159,591 class files with zero
+The 2026-08-18 release-candidate runs parsed 186,968 class files with zero
 failures. That count covers all modules in the installed JDK 11, 17, 21, 25,
-and 27 images plus JDK 8 `rt.jar`; it is correctness evidence for those exact
-runtimes, not a claim that arbitrary malformed inputs are valid.
+27, and 28 images plus JDK 8 `rt.jar`; it is correctness evidence for those
+exact runtimes, not a claim that arbitrary malformed inputs are valid.
 
 ## Performance-Sensitive JNI Calls
 
@@ -166,6 +167,9 @@ I/O must be measured separately.
 
 The first recorded reference run is documented in
 [Callback Dispatch Benchmark - 2026-08-17](CALLBACK_DISPATCH_BENCHMARK_2026-08-17.md).
+A concise table of the reference figures, allocation proof, and downstream
+consumer validation is maintained in
+[JVM TI 3.0 Performance Reference](PERFORMANCE_REFERENCE_3_0.md).
 
 ### Callback allocation proof
 
