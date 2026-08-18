@@ -9,6 +9,18 @@
 //! - High-level wrappers with ergonomic Rust APIs
 //! - The [`Agent`] trait and [`export_agent!`] macro for easy agent creation
 //!
+//! ## Version 3 Migration Notice
+//!
+//! Version 3.0 is intentionally source-breaking from 2.x. Version 2.4.0 was
+//! not published because the planned ABI, callback, ownership, and lifecycle
+//! corrections required a major-version release under semantic versioning.
+//! Existing agents must migrate their callback implementations and review all
+//! affected unsafe and ownership contracts rather than changing only the Cargo
+//! dependency version. See the complete [2.x to 3.0 migration guide] before
+//! upgrading a production agent.
+//!
+//! [2.x to 3.0 migration guide]: https://github.com/JavaPerformance/jvmti/blob/v3.0.0/docs/MIGRATING_2_TO_3.md
+//!
 //! ## Features
 //!
 //! - **Complete Coverage**: Complete JDK 28 JNI and JVM TI function tables

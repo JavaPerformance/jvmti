@@ -14,14 +14,27 @@ This crate focuses on:
 
 It is intended for serious native JVM tooling, not just experimentation.
 
+## Upgrading From 2.x
+
+> **Important:** Version 3.0 is intentionally source-breaking from every 2.x
+> release. Version 2.4.0 was not published: the ABI, callback, ownership, and
+> lifecycle corrections originally planned for 2.4 required a major-version
+> release under semantic versioning and therefore became 3.0.0.
+
+Do not update an existing agent by changing only the dependency version.
+Version 3.0 replaces the parallel `*_with_jvmti` callback surface with canonical
+typed callbacks, changes lifecycle contexts and several ownership contracts,
+corrects public raw ABI declarations, and raises the minimum Rust version to
+1.85. Follow the complete [2.x to 3.0 migration guide](docs/MIGRATING_2_TO_3.md)
+before upgrading production agents.
+
 ## Scope boundary
 
 This crate is a **generic JNI/JVMTI binding and agent framework** (published on
-crates.io; this branch is the **3.0.0** candidate). Bytecode instrumentation engines, spec
-transforms, stackmap-aware BCI, and related policy live in the separate
-`bytecode-instrument` project. Do not add that instrumentation technology here
-unless there is an explicit decision to merge or port it. Agents can depend on
-both crates independently.
+crates.io). Bytecode instrumentation engines, spec transforms, stackmap-aware
+BCI, and related policy live in the separate `bytecode-instrument` project. Do
+not add that instrumentation technology here unless there is an explicit
+decision to merge or port it. Agents can depend on both crates independently.
 
 ## Why This Exists
 
