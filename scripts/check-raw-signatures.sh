@@ -36,6 +36,7 @@ bindgen "$OUT/native-signatures.h" \
   --raw-line 'use jvmti_bindings::sys::jvmti::*;' \
   --no-layout-tests \
   --no-doc-comments \
+  --formatter=none \
   --rust-target 1.85 \
   --rust-edition 2024 \
   -- \
@@ -47,6 +48,8 @@ bindgen "$OUT/native-signatures.h" \
 # emits the host's concrete `C` ABI. Normalize those nominal representations
 # to this crate's intentionally opaque pointer aliases. Keep C variadics as C;
 # all fixed JNI/JVM TI entry points use Rust's cross-platform `system` ABI.
+# Match tokens rather than formatter whitespace so the proof is independent of
+# the bindgen runner's rustfmt version (and also works with --formatter=none).
 python3 - "$OUT/canonical.rs" <<'PY'
 import re
 import sys
@@ -54,51 +57,46 @@ from pathlib import Path
 
 path = Path(sys.argv[1])
 text = path.read_text()
-replacements = {
-    "*mut *const JNINativeInterface_": "*mut JNIEnv",
-    "*mut *const JNIInvokeInterface_": "*mut JavaVM",
-    "*mut *const jvmtiInterface_1_": "*mut jvmtiEnv",
-    "*mut _jobject": "jobject",
-    "*mut _jmethodID": "jmethodID",
-    "*mut _jfieldID": "jfieldID",
-    "_jobjectType": "jobjectRefType",
-    "*mut _jrawMonitorID": "jrawMonitorID",
-    "*mut __va_list_tag": "va_list",
-    "__BindgenOpaqueArray<u64, 4usize>": "va_list",
-}
-for native, public in replacements.items():
-    text = text.replace(native, public)
+token_replacements = (
+    (r"\*\s*mut\s+\*\s*const\s+JNINativeInterface_\b", "*mut JNIEnv"),
+    (r"\*\s*mut\s+\*\s*const\s+JNIInvokeInterface_\b", "*mut JavaVM"),
+    (r"\*\s*mut\s+\*\s*const\s+jvmtiInterface_1_\b", "*mut jvmtiEnv"),
+    (r"\*\s*mut\s+_jobject\b", "jobject"),
+    (r"\*\s*mut\s+_jmethodID\b", "jmethodID"),
+    (r"\*\s*mut\s+_jfieldID\b", "jfieldID"),
+    (r"\b_jobjectType\b", "jobjectRefType"),
+    (r"\*\s*mut\s+_jrawMonitorID\b", "jrawMonitorID"),
+    (r"\*\s*mut\s+__va_list_tag\b", "va_list"),
+    (r"__BindgenOpaqueArray\s*<\s*u64\s*,\s*4usize\s*>", "va_list"),
+)
+for native, public in token_replacements:
+    text = re.sub(native, public, text)
 
-blocks = re.split(r"(?=pub type canonical_)", text)
-for index, block in enumerate(blocks):
-    if not block.startswith("pub type canonical_"):
-        continue
-    replacements = []
-    start = 0
-    marker = 'extern "C" fn('
-    while (function := block.find(marker, start)) >= 0:
-        cursor = function + len(marker)
-        depth = 1
-        top_level_variadic = False
-        while cursor < len(block) and depth:
-            if depth == 1 and block.startswith("...", cursor):
-                top_level_variadic = True
-                cursor += 3
-                continue
-            if block[cursor] == "(":
-                depth += 1
-            elif block[cursor] == ")":
-                depth -= 1
-            cursor += 1
-        if not top_level_variadic:
-            replacements.append(function)
-        start = function + len(marker)
-    for function in reversed(replacements):
-        block = block[:function] + block[function:].replace(
-            'extern "C" fn', 'extern "system" fn', 1
-        )
-    blocks[index] = block
-path.write_text("".join(blocks))
+function_pattern = re.compile(r'extern\s+"C"\s+fn\s*\(')
+fixed_abi_spans = []
+for function in function_pattern.finditer(text):
+    cursor = function.end()
+    depth = 1
+    top_level_variadic = False
+    while cursor < len(text) and depth:
+        if depth == 1 and text.startswith("...", cursor):
+            top_level_variadic = True
+            cursor += 3
+            continue
+        if text[cursor] == "(":
+            depth += 1
+        elif text[cursor] == ")":
+            depth -= 1
+        cursor += 1
+    if depth:
+        raise SystemExit("unterminated bindgen function signature")
+    if not top_level_variadic:
+        fixed_abi_spans.append(function.span())
+
+for start, end in reversed(fixed_abi_spans):
+    text = text[:start] + 'extern "system" fn (' + text[end:]
+
+path.write_text(text)
 PY
 
 cargo +1.85.0 build --locked --lib --message-format=json \
