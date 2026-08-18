@@ -68,6 +68,7 @@ token_replacements = (
     (r"\*\s*mut\s+_jrawMonitorID\b", "jrawMonitorID"),
     (r"\*\s*mut\s+__va_list_tag\b", "va_list"),
     (r"__BindgenOpaqueArray\s*<\s*u64\s*,\s*4usize\s*>", "va_list"),
+    (r"\b__va_list\b", "va_list"),
 )
 for native, public in token_replacements:
     text = re.sub(native, public, text)

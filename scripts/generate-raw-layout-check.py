@@ -10,7 +10,10 @@ from pathlib import Path
 
 def records(source: str) -> dict[str, tuple[str, list[str]]]:
     found: dict[str, tuple[str, list[str]]] = {}
-    pattern = re.compile(r"^pub (struct|union) ([A-Za-z_]\w*)\s*\{", re.MULTILINE)
+    # Parse tokens rather than rustfmt line layout. Hosted ABI proofs deliberately
+    # run bindgen with formatting disabled so their result cannot vary by the
+    # runner's rustfmt version or installed components.
+    pattern = re.compile(r"\bpub\s+(struct|union)\s+([A-Za-z_]\w*)\s*\{")
     for match in pattern.finditer(source):
         kind, name = match.groups()
         cursor = match.end()
@@ -24,7 +27,7 @@ def records(source: str) -> dict[str, tuple[str, list[str]]]:
         if depth:
             raise SystemExit(f"unterminated Rust {kind}: {name}")
         block = source[match.end() : cursor - 1]
-        fields = re.findall(r"^\s*pub\s+([A-Za-z_]\w*)\s*:", block, re.MULTILINE)
+        fields = re.findall(r"\bpub\s+([A-Za-z_]\w*)\s*:", block)
         found[name] = (kind, fields)
     return found
 

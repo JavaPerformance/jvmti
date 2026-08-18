@@ -26,6 +26,7 @@ mkdir -p "$OUT"
 bindgen "$HEADER" \
   --no-layout-tests \
   --no-doc-comments \
+  --formatter=none \
   --rust-target 1.85 \
   --rust-edition 2024 \
   -- \
