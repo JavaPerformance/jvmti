@@ -15,7 +15,7 @@ precedence over source compatibility. It is a commitment that predictable JDK
 growth, new callbacks, table tails, capability bits, and open numeric values do
 not require another major release.
 
-## What Dimitry's Finding Exposed
+## What the Callback Gap Exposed
 
 The 2.3 JIT callbacks discarded their originating `jvmtiEnv*`. Adding parallel
 `*_with_jvmti` methods fixed those callbacks locally but exposed the systemic

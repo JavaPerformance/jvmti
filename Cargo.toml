@@ -5,7 +5,7 @@
 
 [package]
 name = "jvmti-bindings"
-version = "3.0.0"
+version = "3.0.1"
 edition = "2024"
 rust-version = "1.85"
 
@@ -69,6 +69,86 @@ crate-type = ["cdylib"]
 
 [[example]]
 name = "attach_logger"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "vm_lifecycle"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "thread_lifecycle"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "virtual_thread_lifecycle"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "exception_tracker"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "monitor_contention"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "gc_observer"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "allocation_tracker"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "resource_exhaustion"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "native_method_bind"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "jit_code_events"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "data_dump_request"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "method_exit_values"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "field_watch"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "breakpoint"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "class_inventory"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "thread_inventory"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "jni_string_roundtrip"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "classfile_inspector"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "minecraft_class_activity"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "minecraft_tick_breakpoint"
 crate-type = ["cdylib"]
 
 [[example]]
