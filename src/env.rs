@@ -6,32 +6,39 @@
 //!
 //! # Quick Start
 //!
-//! ```rust,ignore
+//! ```rust,no_run
 //! use jvmti_bindings::prelude::*;
 //!
 //! #[derive(Default)]
 //! struct MyAgent;
 //!
 //! impl Agent for MyAgent {
-//!     fn on_load(&self, vm: *mut jni::JavaVM, options: &str) -> jni::jint {
+//!     fn on_load(&self, context: AgentLoadContext<'_>) -> jni::jint {
 //!         // Get JVMTI environment
-//!         let jvmti = Jvmti::new(vm).expect("Failed to get JVMTI env");
+//!         let Ok(jvmti) = context.vm().jvmti() else {
+//!             return jni::JNI_ERR;
+//!         };
 //!
 //!         // Request capabilities
 //!         let mut caps = jvmti::jvmtiCapabilities::default();
 //!         caps.set_can_generate_all_class_hook_events(true);
-//!         jvmti.add_capabilities(&caps).expect("Failed to add capabilities");
+//!         if jvmti.add_capabilities(&caps).is_err() {
+//!             return jni::JNI_ERR;
+//!         }
 //!
 //!         // Set up event callbacks
 //!         let callbacks = get_default_callbacks();
-//!         jvmti.set_event_callbacks(callbacks).expect("Failed to set callbacks");
+//!         if jvmti.set_event_callbacks(callbacks).is_err() {
+//!             return jni::JNI_ERR;
+//!         }
 //!
 //!         jni::JNI_OK
 //!     }
 //!
-//!     fn vm_init(&self, jni_ptr: *mut jni::JNIEnv, _thread: jni::jthread) {
-//!         // Get JNI environment
-//!         let jni = unsafe { JniEnv::from_raw(jni_ptr) };
+//!     fn vm_init(&self, context: CallbackContext<'_>, _event: ThreadEvent) {
+//!         let Some(jni) = context.jni() else {
+//!             return;
+//!         };
 //!
 //!         // Find a class
 //!         if let Some(cls) = jni.find_class("java/lang/System") {
@@ -82,16 +89,20 @@
 //!
 //! - [`LocalRef`]: Automatically deletes a local reference when dropped
 //! - [`GlobalRef`]: Automatically deletes a global reference when dropped
+//! - [`WeakGlobalRef`]: Automatically deletes a weak global reference when dropped
 //!
-//! ```rust,ignore
+//! ```rust,no_run
 //! use jvmti_bindings::prelude::*;
 //!
 //! fn do_something(jni: &JniEnv) {
 //!     // LocalRef automatically cleans up when it goes out of scope
-//!     let class = LocalRef::new(jni, jni.find_class("java/lang/String").unwrap());
+//!     let Some(raw_class) = jni.find_class("java/lang/String") else {
+//!         return;
+//!     };
+//!     let class = unsafe { LocalRef::from_raw(jni, raw_class) };
 //!
 //!     // Use class.get() to access the underlying jclass
-//!     let method = jni.get_method_id(class.get(), "length", "()I");
+//!     let method = unsafe { jni.get_method_id(class.get(), "length", "()I") };
 //!
 //!     // class is automatically deleted here
 //! }
@@ -100,18 +111,26 @@
 // Re-export the JVMTI wrapper
 mod jvmti_impl {
     pub use crate::jvmti_wrapper::{
-        ExtensionEventInfo, ExtensionFunctionInfo, ExtensionParamInfo, Jvmti, LocalVariableEntry,
-        MonitorUsage, StackInfo, ThreadGroupInfo, ThreadInfo,
+        ExtensionEventInfo, ExtensionFunctionInfo, ExtensionParamInfo, JniFunctionTable, Jvmti,
+        JvmtiAllocation, LocalVariableEntry, MonitorUsage, RawMonitor, RawMonitorGuard, StackInfo,
+        ThreadGroupInfo, ThreadInfo,
     };
 }
 
 // Re-export the JNI wrapper
 mod jni_impl {
-    pub use crate::jni_wrapper::{JniEnv, LocalRef, GlobalRef};
+    pub use crate::jni_wrapper::{
+        GlobalRef, JavaMonitorGuard, JniEnv, JniVersionError, LocalFrame, LocalRef,
+        PrimitiveArrayCritical, PrimitiveArrayElements, StringCritical, WeakGlobalRef,
+    };
 }
 
-pub use jvmti_impl::{
-    ExtensionEventInfo, ExtensionFunctionInfo, ExtensionParamInfo, Jvmti, LocalVariableEntry,
-    MonitorUsage, StackInfo, ThreadGroupInfo, ThreadInfo,
+pub use jni_impl::{
+    GlobalRef, JavaMonitorGuard, JniEnv, JniVersionError, LocalFrame, LocalRef,
+    PrimitiveArrayCritical, PrimitiveArrayElements, StringCritical, WeakGlobalRef,
 };
-pub use jni_impl::{JniEnv, LocalRef, GlobalRef};
+pub use jvmti_impl::{
+    ExtensionEventInfo, ExtensionFunctionInfo, ExtensionParamInfo, JniFunctionTable, Jvmti,
+    JvmtiAllocation, LocalVariableEntry, MonitorUsage, RawMonitor, RawMonitorGuard, StackInfo,
+    ThreadGroupInfo, ThreadInfo,
+};

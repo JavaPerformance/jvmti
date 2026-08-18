@@ -1,0 +1,1127 @@
+src/advanced/heap_graph.rs	unsafe extern "system" fn tag_all_objects_cb(
+src/advanced/heap_graph.rs	let tagger = unsafe { &mut *user_data.cast::<Tagger>() };
+src/advanced/heap_graph.rs	if unsafe { *tag_ptr } == 0 {
+src/advanced/heap_graph.rs	unsafe { *tag_ptr = tagger.next };
+src/advanced/heap_graph.rs	unsafe {
+src/advanced/heap_graph.rs	unsafe extern "system" fn edge_collector_cb(
+src/advanced/heap_graph.rs	let target_tag = unsafe { *tag_ptr };
+src/advanced/heap_graph.rs	let referrer_tag = unsafe { *referrer_tag_ptr };
+src/advanced/heap_graph.rs	let collector = unsafe { &mut *(user_data as *mut EdgeCollector) };
+src/advanced/heap_graph.rs	pub unsafe fn build_heap_graph(
+src/advanced/heap_graph.rs	unsafe {
+src/advanced/heap_graph.rs	let result = unsafe {
+src/advanced/heap_graph.rs	unsafe { tag_all_objects_cb(0, 0, &mut tag, (&mut tagger as *mut Tagger).cast()) };
+src/agent.rs	pub(crate) unsafe fn from_raw(raw: *mut jni::JavaVM) -> Option<Self> {
+src/agent.rs	pub(crate) unsafe fn from_raw(
+src/agent.rs	vm: unsafe { JavaVmRef::from_raw(vm)? },
+src/agent.rs	Some(unsafe { CStr::from_ptr(options) })
+src/agent.rs	pub(crate) unsafe fn from_raw(vm: *mut jni::JavaVM) -> Option<Self> {
+src/agent.rs	vm: unsafe { JavaVmRef::from_raw(vm)? },
+src/callbacks.rs	pub(crate) unsafe fn from_raw(raw: *mut jvmti::jvmtiEnv) -> Option<Self> {
+src/callbacks.rs	inner: unsafe { Jvmti::from_raw(raw) },
+src/callbacks.rs	pub(crate) unsafe fn from_raw(raw: *mut jni::JNIEnv) -> Option<Self> {
+src/callbacks.rs	inner: unsafe { JniEnv::from_raw(raw) },
+src/callbacks.rs	pub(crate) unsafe fn from_raw(
+src/callbacks.rs	jvmti: unsafe { JvmtiRef::from_raw(jvmti)? },
+src/callbacks.rs	jni: unsafe { JniEnvRef::from_raw(jni) },
+src/callbacks.rs	pub unsafe fn set_new_address(&mut self, address: *mut c_void) {
+src/callbacks.rs	unsafe { *self.new_address_ptr = address };
+src/callbacks.rs	(!self.name.is_null()).then(|| unsafe { CStr::from_ptr(self.name) })
+src/callbacks.rs	unsafe { std::slice::from_raw_parts(self.class_data, self.class_data_length as usize) }
+src/callbacks.rs	let data = unsafe { allocation.into_raw() };
+src/callbacks.rs	unsafe {
+src/callbacks.rs	unsafe { std::slice::from_raw_parts(self.map, self.map_length as usize) }
+src/callbacks.rs	(!self.name.is_null()).then(|| unsafe { CStr::from_ptr(self.name) })
+src/callbacks.rs	(!self.description.is_null()).then(|| unsafe { CStr::from_ptr(self.description) })
+src/callbacks.rs	unsafe extern "system" fn allocate_bytes(
+src/callbacks.rs	let memory = unsafe { alloc(Layout::from_size_align(size, 1).unwrap()) };
+src/callbacks.rs	unsafe { *result = memory };
+src/callbacks.rs	unsafe extern "system" fn deallocate_bytes(
+src/callbacks.rs	unsafe { dealloc(memory, Layout::from_size_align(size, 1).unwrap()) };
+src/callbacks.rs	let context = unsafe { CallbackContext::from_raw(&mut raw_env, ptr::null_mut()) }.unwrap();
+src/callbacks.rs	assert_eq!(unsafe { std::slice::from_raw_parts(output, 3) }, &[1, 2, 3]);
+src/callbacks.rs	unsafe { context.jvmti().deallocate_raw(output) }.unwrap();
+src/dynamic_library.rs	pub(crate) unsafe fn symbol<T: Copy>(&self, name: &CStr) -> Result<T, String> {
+src/dynamic_library.rs	Ok(unsafe { std::mem::transmute_copy::<*mut c_void, T>(&symbol.as_ptr()) })
+src/dynamic_library.rs	unsafe extern "C" {
+src/dynamic_library.rs	NonNull::new(unsafe { dlopen(path.as_ptr(), RTLD_NOW) }).ok_or_else(last_error)
+src/dynamic_library.rs	unsafe { dlerror() };
+src/dynamic_library.rs	let symbol = unsafe { dlsym(handle.as_ptr(), name.as_ptr()) };
+src/dynamic_library.rs	let error = unsafe { dlerror() };
+src/dynamic_library.rs	return Err(unsafe { CStr::from_ptr(error) }
+src/dynamic_library.rs	let _ = unsafe { dlclose(handle.as_ptr()) };
+src/dynamic_library.rs	let error = unsafe { dlerror() };
+src/dynamic_library.rs	unsafe { CStr::from_ptr(error) }
+src/dynamic_library.rs	unsafe extern "system" {
+src/dynamic_library.rs	NonNull::new(unsafe { LoadLibraryW(path.as_ptr()) }).ok_or_else(last_error)
+src/dynamic_library.rs	NonNull::new(unsafe { GetProcAddress(handle.as_ptr(), name.as_ptr().cast()) })
+src/dynamic_library.rs	let _ = unsafe { FreeLibrary(handle.as_ptr()) };
+src/dynamic_library.rs	let code = unsafe { GetLastError() };
+src/embed.rs	let mut args: jni::JavaVMInitArgs = unsafe { std::mem::zeroed() };
+src/embed.rs	pub unsafe fn create_with(self, create: jni::JNI_CreateJavaVM) -> Result<JavaVm, jni::jint> {
+src/embed.rs	let res = unsafe { create(&mut vm, &mut env, &mut args) };
+src/embed.rs	unsafe { lib.symbol(c"JNI_CreateJavaVM").map_err(EmbedError::Load)? };
+src/embed.rs	let mut vm = unsafe { self.create_with(create).map_err(EmbedError::Jni)? };
+src/embed.rs	let _ = unsafe { self.vm.detach_current_thread() };
+src/embed.rs	unsafe impl Send for JavaVm {}
+src/embed.rs	unsafe impl Sync for JavaVm {}
+src/embed.rs	pub unsafe fn creator_env(&self) -> JniEnv {
+src/embed.rs	unsafe { JniEnv::from_raw(self.creator_env) }
+src/embed.rs	pub unsafe fn get_env(&self, version: jni::jint) -> Result<JniEnv, jni::jint> {
+src/embed.rs	let res = unsafe { crate::jvm_call!(self.vm, GetEnv, &mut env_ptr, version) };
+src/embed.rs	Ok(unsafe { JniEnv::from_raw(env_ptr as *mut jni::JNIEnv) })
+src/embed.rs	let res = unsafe {
+src/embed.rs	Ok(unsafe { JniEnv::from_raw(env_ptr as *mut jni::JNIEnv) })
+src/embed.rs	pub unsafe fn attach_current_thread(&self) -> Result<JniEnv, jni::jint> {
+src/embed.rs	pub unsafe fn attach_current_thread_as_daemon(&self) -> Result<JniEnv, jni::jint> {
+src/embed.rs	match unsafe { self.get_env(jni::JNI_VERSION_1_8) } {
+src/embed.rs	pub unsafe fn detach_current_thread(&self) -> Result<(), jni::jint> {
+src/embed.rs	let res = unsafe { crate::jvm_call!(self.vm, DetachCurrentThread) };
+src/embed.rs	let res = unsafe { crate::jvm_call!(self.vm, DestroyJavaVM) };
+src/embed.rs	let result = unsafe { crate::jvm_call!(self.vm, DestroyJavaVM) };
+src/embed.rs	unsafe extern "system" fn succeed_destroy(_vm: *mut jni::JavaVM) -> jni::jint {
+src/embed.rs	unsafe extern "system" fn fail_destroy(_vm: *mut jni::JavaVM) -> jni::jint {
+src/embed.rs	unsafe extern "system" fn fail_attach(
+src/embed.rs	unsafe extern "system" fn fail_detach(_vm: *mut jni::JavaVM) -> jni::jint {
+src/embed.rs	unsafe extern "system" fn fail_get_env(
+src/embed.rs	unsafe extern "system" fn fake_create(
+src/embed.rs	unsafe {
+src/embed.rs	let vm = unsafe { builder.create_with(fake_create) }.expect("fake JVM creation");
+src/embed.rs	drop(unsafe { Box::from_raw(vm_slot) });
+src/embed.rs	drop(unsafe { Box::from_raw(vm_slot) });
+src/embed.rs	drop(unsafe { Box::from_raw(vm_slot) });
+src/env.rs	//! let class = unsafe { LocalRef::from_raw(jni, raw_class) };
+src/env.rs	//! let method = unsafe { jni.get_method_id(class.get(), "length", "()I") };
+src/jni_wrapper.rs	//! let env = unsafe { JniEnv::from_raw(jni) };
+src/jni_wrapper.rs	// and already-unsafe lexical contexts.
+src/jni_wrapper.rs	let slot = unsafe { &raw const (*table).$field };
+src/jni_wrapper.rs	pub unsafe fn $name(
+src/jni_wrapper.rs	unsafe { call(self.env, object, method, arguments.as_ptr()) }
+src/jni_wrapper.rs	pub unsafe fn $name(
+src/jni_wrapper.rs	unsafe { call(self.env, object, class, method, arguments.as_ptr()) }
+src/jni_wrapper.rs	pub unsafe fn $name(
+src/jni_wrapper.rs	unsafe { call(self.env, object, class, method, arguments.as_ptr()) != jni::JNI_FALSE }
+src/jni_wrapper.rs	pub unsafe fn $name(
+src/jni_wrapper.rs	unsafe { call(self.env, class, method, arguments.as_ptr()) }
+src/jni_wrapper.rs	pub unsafe fn $name(
+src/jni_wrapper.rs	unsafe { call(self.env, class, method, arguments.as_ptr()) != jni::JNI_FALSE }
+src/jni_wrapper.rs	pub unsafe fn $name(&self, $owner: jni::$owner, field: jni::jfieldID) -> $return_type {
+src/jni_wrapper.rs	unsafe { get(self.env, $owner, field) }
+src/jni_wrapper.rs	pub unsafe fn $name(&self, $owner: jni::$owner, field: jni::jfieldID) -> bool {
+src/jni_wrapper.rs	unsafe { get(self.env, $owner, field) != jni::JNI_FALSE }
+src/jni_wrapper.rs	pub unsafe fn $name(&self, $owner: jni::$owner, field: jni::jfieldID, value: $value_type) {
+src/jni_wrapper.rs	unsafe { set(self.env, $owner, field, value) }
+src/jni_wrapper.rs	pub unsafe fn $name(&self, $owner: jni::$owner, field: jni::jfieldID, value: bool) {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	let array = unsafe { create(self.env, length) };
+src/jni_wrapper.rs	pub unsafe fn $get_name(
+src/jni_wrapper.rs	let raw_length = unsafe { self.get_array_length(array) };
+src/jni_wrapper.rs	let elements = unsafe { get(self.env, array, &mut is_copy) };
+src/jni_wrapper.rs	pub unsafe fn $get_name(
+src/jni_wrapper.rs	unsafe { get(self.env, array, start, length, buffer.as_mut_ptr()) }
+src/jni_wrapper.rs	pub unsafe fn $set_name(
+src/jni_wrapper.rs	unsafe { set(self.env, array, start, length, buffer.as_ptr()) }
+src/jni_wrapper.rs	release: unsafe extern "system" fn(*mut jni::JNIEnv, jni::jarray, *mut T, jni::jint),
+src/jni_wrapper.rs	release: unsafe extern "system" fn(*mut jni::JNIEnv, jni::jarray, *mut T, jni::jint),
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	unsafe { (self.release)(self.env.env, self.array, self.elements.as_ptr(), mode) }
+src/jni_wrapper.rs	unsafe { std::slice::from_raw_parts(self.elements.as_ptr(), self.length) }
+src/jni_wrapper.rs	unsafe { std::slice::from_raw_parts_mut(self.elements.as_ptr(), self.length) }
+src/jni_wrapper.rs	release: unsafe extern "system" fn(*mut jni::JNIEnv, jni::jstring, *const jni::jchar),
+src/jni_wrapper.rs	unsafe { (self.release)(self.env.env, self.string, self.characters.as_ptr()) }
+src/jni_wrapper.rs	unsafe { std::slice::from_raw_parts(self.characters.as_ptr(), self.length) }
+src/jni_wrapper.rs	unsafe extern "system" fn(*mut jni::JNIEnv, jni::jarray, *mut std::ffi::c_void, jni::jint),
+src/jni_wrapper.rs	unsafe { (self.release)(self.env.env, self.array, self.elements.as_ptr(), mode) }
+src/jni_wrapper.rs	pub unsafe fn pop(mut self, result: jni::jobject) -> jni::jobject {
+src/jni_wrapper.rs	unsafe { self.env.pop_local_frame_raw(result) }
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	let result = unsafe { self.env.monitor_exit_raw(self.object) };
+src/jni_wrapper.rs	let _ = unsafe { self.env.monitor_exit_raw(self.object) };
+src/jni_wrapper.rs	pub unsafe fn from_raw(env: *mut jni::JNIEnv) -> Self {
+src/jni_wrapper.rs	let table = unsafe { *self.env };
+src/jni_wrapper.rs	unsafe { slot.read() }
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn get_module(&self, class: jni::jclass) -> Result<jni::jobject, JniVersionError> {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn is_virtual_thread(&self, object: jni::jobject) -> Result<bool, JniVersionError> {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn get_string_utf_length_as_long(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn has_identity(&self, object: jni::jobject) -> Result<bool, JniVersionError> {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn define_class(
+src/jni_wrapper.rs	unsafe { self.define_class_cstr(&c_name, loader, bytes) }
+src/jni_wrapper.rs	pub unsafe fn define_class_cstr(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn from_reflected_method(&self, method: jni::jobject) -> jni::jmethodID {
+src/jni_wrapper.rs	unsafe { convert(self.env, method) }
+src/jni_wrapper.rs	pub unsafe fn from_reflected_field(&self, field: jni::jobject) -> jni::jfieldID {
+src/jni_wrapper.rs	unsafe { convert(self.env, field) }
+src/jni_wrapper.rs	pub unsafe fn to_reflected_method(
+src/jni_wrapper.rs	let reflected = unsafe {
+src/jni_wrapper.rs	pub unsafe fn to_reflected_field(
+src/jni_wrapper.rs	let reflected = unsafe {
+src/jni_wrapper.rs	pub unsafe fn get_superclass(&self, cls: jni::jclass) -> Option<jni::jclass> {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn is_assignable_from(&self, cls1: jni::jclass, cls2: jni::jclass) -> bool {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn get_object_class(&self, obj: jni::jobject) -> jni::jclass {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn is_instance_of(&self, obj: jni::jobject, cls: jni::jclass) -> bool {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn class_loader_parent(&self, loader: jni::jobject) -> Option<jni::jobject> {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	let loader = unsafe {
+src/jni_wrapper.rs	pub unsafe fn module_name(&self, module: jni::jobject) -> Option<String> {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn module_packages(&self, module: jni::jobject) -> Option<Vec<String>> {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn module_class_loader(&self, module: jni::jobject) -> Option<jni::jobject> {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn module_can_read(&self, module: jni::jobject, other: jni::jobject) -> bool {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn module_is_exported_to(
+src/jni_wrapper.rs	unsafe { self.module_package_access(module, package_name, other, c"isExported") }
+src/jni_wrapper.rs	pub unsafe fn module_is_open_to(
+src/jni_wrapper.rs	unsafe { self.module_package_access(module, package_name, other, c"isOpen") }
+src/jni_wrapper.rs	unsafe fn module_package_access(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	unsafe { fatal(self.env, message.as_ptr()) };
+src/jni_wrapper.rs	pub unsafe fn throw(&self, obj: jni::jthrowable) -> Result<(), jni::jint> {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn throw_new(&self, cls: jni::jclass, msg: &str) -> Result<(), jni::jint> {
+src/jni_wrapper.rs	unsafe { self.throw_new_cstr(cls, &c_msg) }
+src/jni_wrapper.rs	pub unsafe fn throw_new_cstr(&self, cls: jni::jclass, msg: &CStr) -> Result<(), jni::jint> {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn get_string_utf(&self, s: jni::jstring) -> Option<String> {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn get_string_utf16(&self, s: jni::jstring) -> Option<Vec<jni::jchar>> {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn get_string(&self, s: jni::jstring) -> Option<String> {
+src/jni_wrapper.rs	let utf16 = unsafe { self.get_string_utf16(s) }?;
+src/jni_wrapper.rs	pub unsafe fn get_string_lossy(&self, s: jni::jstring) -> Option<String> {
+src/jni_wrapper.rs	let utf16 = unsafe { self.get_string_utf16(s) }?;
+src/jni_wrapper.rs	pub unsafe fn get_string_utf_length(&self, s: jni::jstring) -> jni::jsize {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn get_string_length(&self, s: jni::jstring) -> jni::jsize {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn get_string_region(
+src/jni_wrapper.rs	unsafe { get(self.env, string, start, length, buffer.as_mut_ptr()) }
+src/jni_wrapper.rs	pub unsafe fn get_string_utf_region(
+src/jni_wrapper.rs	unsafe { get(self.env, string, start, length, buffer.as_mut_ptr().cast()) }
+src/jni_wrapper.rs	pub unsafe fn get_string_critical(&self, string: jni::jstring) -> Option<StringCritical<'_>> {
+src/jni_wrapper.rs	let raw_length = unsafe { self.get_string_length(string) };
+src/jni_wrapper.rs	let characters = unsafe { get(self.env, string, &mut is_copy) };
+src/jni_wrapper.rs	pub unsafe fn get_method_id(
+src/jni_wrapper.rs	unsafe { self.get_method_id_cstr(cls, &c_name, &c_sig) }
+src/jni_wrapper.rs	pub unsafe fn get_method_id_cstr(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn get_static_method_id(
+src/jni_wrapper.rs	unsafe { self.get_static_method_id_cstr(cls, &c_name, &c_sig) }
+src/jni_wrapper.rs	pub unsafe fn get_static_method_id_cstr(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn get_field_id(
+src/jni_wrapper.rs	unsafe { self.get_field_id_cstr(cls, &c_name, &c_sig) }
+src/jni_wrapper.rs	pub unsafe fn get_field_id_cstr(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn get_static_field_id(
+src/jni_wrapper.rs	unsafe { self.get_static_field_id_cstr(cls, &c_name, &c_sig) }
+src/jni_wrapper.rs	pub unsafe fn get_static_field_id_cstr(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn alloc_object(&self, cls: jni::jclass) -> Option<jni::jobject> {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn new_object(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn is_same_object(&self, ref1: jni::jobject, ref2: jni::jobject) -> bool {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn new_global_ref(&self, obj: jni::jobject) -> jni::jobject {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn delete_global_ref(&self, obj: jni::jobject) {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn new_local_ref(&self, obj: jni::jobject) -> jni::jobject {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn delete_local_ref(&self, obj: jni::jobject) {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn new_weak_global_ref(&self, obj: jni::jobject) -> jni::jweak {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn delete_weak_global_ref(&self, obj: jni::jweak) {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	unsafe { self.push_local_frame_raw(capacity)? };
+src/jni_wrapper.rs	pub unsafe fn push_local_frame_raw(&self, capacity: jni::jint) -> Result<(), jni::jint> {
+src/jni_wrapper.rs	let result = unsafe { push(self.env, capacity) };
+src/jni_wrapper.rs	pub unsafe fn pop_local_frame_raw(&self, result: jni::jobject) -> jni::jobject {
+src/jni_wrapper.rs	unsafe { pop(self.env, result) }
+src/jni_wrapper.rs	pub unsafe fn get_array_length(&self, array: jni::jarray) -> jni::jsize {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn new_object_array(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn get_object_array_element(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn set_object_array_element(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn get_byte_array_region(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn set_byte_array_region(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn get_int_array_region(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn set_int_array_region(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn get_long_array_region(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn set_long_array_region(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn get_primitive_array_critical(
+src/jni_wrapper.rs	let raw_length = unsafe { self.get_array_length(array) };
+src/jni_wrapper.rs	let elements = unsafe { get(self.env, array, &mut is_copy) };
+src/jni_wrapper.rs	pub unsafe fn call_void_method(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn call_int_method(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn call_long_method(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn call_boolean_method(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn call_object_method(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn call_static_void_method(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn call_static_int_method(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn call_static_object_method(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn get_object_field(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn get_int_field(&self, obj: jni::jobject, field_id: jni::jfieldID) -> jni::jint {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn get_long_field(&self, obj: jni::jobject, field_id: jni::jfieldID) -> jni::jlong {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn set_object_field(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn set_int_field(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn set_long_field(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn get_static_object_field(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn get_static_int_field(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn set_static_object_field(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn monitor_enter(
+src/jni_wrapper.rs	unsafe { self.monitor_enter_raw(obj)? };
+src/jni_wrapper.rs	pub unsafe fn monitor_enter_raw(&self, obj: jni::jobject) -> Result<(), jni::jint> {
+src/jni_wrapper.rs	let result = unsafe { enter(self.env, obj) };
+src/jni_wrapper.rs	pub unsafe fn monitor_exit_raw(&self, obj: jni::jobject) -> Result<(), jni::jint> {
+src/jni_wrapper.rs	let result = unsafe { exit(self.env, obj) };
+src/jni_wrapper.rs	pub unsafe fn new_direct_byte_buffer(
+src/jni_wrapper.rs	let buffer = unsafe { create(self.env, address, capacity) };
+src/jni_wrapper.rs	pub unsafe fn get_direct_buffer_address(&self, buffer: jni::jobject) -> *mut std::ffi::c_void {
+src/jni_wrapper.rs	unsafe { get(self.env, buffer) }
+src/jni_wrapper.rs	pub unsafe fn get_direct_buffer_capacity(&self, buffer: jni::jobject) -> jni::jlong {
+src/jni_wrapper.rs	unsafe { get(self.env, buffer) }
+src/jni_wrapper.rs	pub unsafe fn get_object_ref_type(&self, object: jni::jobject) -> jni::jobjectRefType {
+src/jni_wrapper.rs	unsafe { get(self.env, object) }
+src/jni_wrapper.rs	pub unsafe fn register_natives(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	pub unsafe fn unregister_natives(&self, cls: jni::jclass) -> Result<(), jni::jint> {
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	/// let class = unsafe { LocalRef::from_raw(env, raw_class) };
+src/jni_wrapper.rs	pub unsafe fn from_raw(env: &'a JniEnv, obj: jni::jobject) -> Self {
+src/jni_wrapper.rs	// LocalRef's unsafe constructor established this ownership.
+src/jni_wrapper.rs	unsafe { self.env.delete_local_ref(self.obj) };
+src/jni_wrapper.rs	unsafe fn delete_vm_reference(
+src/jni_wrapper.rs	unsafe {
+src/jni_wrapper.rs	/// let local_class = unsafe { LocalRef::from_raw(env, raw_class) };
+src/jni_wrapper.rs	/// let global_class = unsafe { GlobalRef::new(env, local_class.get()) }?;
+src/jni_wrapper.rs	pub unsafe fn new(env: &JniEnv, local_obj: jni::jobject) -> Result<Self, jni::jint> {
+src/jni_wrapper.rs	let global = unsafe { env.new_global_ref(local_obj) };
+src/jni_wrapper.rs	let result = unsafe { delete_vm_reference(self.vm, self.obj, false) };
+src/jni_wrapper.rs	let _ = unsafe { delete_vm_reference(self.vm, self.obj, false) };
+src/jni_wrapper.rs	pub unsafe fn new(env: &JniEnv, local_obj: jni::jobject) -> Result<Self, jni::jint> {
+src/jni_wrapper.rs	let weak = unsafe { env.new_weak_global_ref(local_obj) };
+src/jni_wrapper.rs	let result = unsafe { delete_vm_reference(self.vm, self.obj, true) };
+src/jni_wrapper.rs	let _ = unsafe { delete_vm_reference(self.vm, self.obj, true) };
+src/jvmti_wrapper.rs	// This macro is expanded in both ordinary and already-unsafe blocks.
+src/jvmti_wrapper.rs	let slot = unsafe { &raw const (*table).$field };
+src/jvmti_wrapper.rs	Ok(unsafe { std::slice::from_raw_parts(ptr, count).to_vec() })
+src/jvmti_wrapper.rs	let slice = unsafe { std::slice::from_raw_parts(ptr, count) };
+src/jvmti_wrapper.rs	Ok(unsafe { std::slice::from_raw_parts(self.ptr, count) })
+src/jvmti_wrapper.rs	mutf8::decode_cstr(unsafe { CStr::from_ptr(self.ptr) })
+src/jvmti_wrapper.rs	mutf8::decode_cstr(unsafe { CStr::from_ptr(ptr) })
+src/jvmti_wrapper.rs	pub unsafe fn into_raw(self) -> *mut T {
+src/jvmti_wrapper.rs	unsafe { std::slice::from_raw_parts(self.ptr, self.byte_len) }
+src/jvmti_wrapper.rs	unsafe { std::slice::from_raw_parts_mut(self.ptr, self.byte_len) }
+src/jvmti_wrapper.rs	unsafe { self.env.raw_monitor_enter(self.monitor)? };
+src/jvmti_wrapper.rs	let result = unsafe { self.env.destroy_raw_monitor(self.monitor) };
+src/jvmti_wrapper.rs	pub unsafe fn into_raw(self) -> jvmti::jrawMonitorID {
+src/jvmti_wrapper.rs	let _ = unsafe { self.env.destroy_raw_monitor(monitor) };
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe { self.monitor.env.raw_monitor_notify(self.monitor.monitor) }
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	let result = unsafe { self.monitor.env.raw_monitor_exit(self.monitor.monitor) };
+src/jvmti_wrapper.rs	let _ = unsafe { self.monitor.env.raw_monitor_exit(self.monitor.monitor) };
+src/jvmti_wrapper.rs	/// Opaque table pointer suitable for the unsafe installation API.
+src/jvmti_wrapper.rs	pub unsafe fn into_raw(self) -> *mut jni::JNINativeInterface_ {
+src/jvmti_wrapper.rs	let functions = unsafe { (*self.env).functions };
+src/jvmti_wrapper.rs	unsafe { slot.read() }.ok_or(jvmti::jvmtiError::NOT_AVAILABLE)
+src/jvmti_wrapper.rs	unsafe { Self::from_java_vm_raw(vm.raw()) }
+src/jvmti_wrapper.rs	pub unsafe fn from_java_vm_raw(vm: *mut jni::JavaVM) -> Result<Self, jni::jint> {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn from_raw(env: *mut jvmti::jvmtiEnv) -> Self {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn set_event_notification_mode(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn enable_event(
+src/jvmti_wrapper.rs	unsafe { self.set_event_notification_mode(true, event_type, thread) }
+src/jvmti_wrapper.rs	pub unsafe fn disable_event(
+src/jvmti_wrapper.rs	unsafe { self.set_event_notification_mode(false, event_type, thread) }
+src/jvmti_wrapper.rs	unsafe { self.enable_event(event_type, ptr::null_mut())? };
+src/jvmti_wrapper.rs	unsafe { self.disable_event(event_type, ptr::null_mut())? };
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_thread_info(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	let ptr = unsafe { self.allocate_raw(size)? };
+src/jvmti_wrapper.rs	pub unsafe fn allocate_raw(&self, size: jni::jlong) -> Result<*mut u8, jvmti::jvmtiError> {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn deallocate_raw(&self, mem: *mut u8) -> Result<(), jvmti::jvmtiError> {
+src/jvmti_wrapper.rs	pub unsafe fn get_thread_state(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_class_signature(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_method_name(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn redefine_classes(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn suspend_thread(&self, thread: jni::jthread) -> Result<(), jvmti::jvmtiError> {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn resume_thread(&self, thread: jni::jthread) -> Result<(), jvmti::jvmtiError> {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn stop_thread(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn interrupt_thread(&self, thread: jni::jthread) -> Result<(), jvmti::jvmtiError> {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn run_agent_thread(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn suspend_thread_list(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn resume_thread_list(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_thread_group_info(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_thread_group_children(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_owned_monitor_info(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_current_contended_monitor(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	let monitor = unsafe { self.create_raw_monitor_raw(name)? };
+src/jvmti_wrapper.rs	pub unsafe fn create_raw_monitor_raw(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn destroy_raw_monitor(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn raw_monitor_enter(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn raw_monitor_exit(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn raw_monitor_wait(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn raw_monitor_notify(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn raw_monitor_notify_all(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_frame_count(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_frame_location(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn notify_frame_pop(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_local_object(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_local_int(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_local_long(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_local_float(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_local_double(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn set_local_object(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn set_local_int(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn set_local_long(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn set_local_float(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn set_local_double(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_local_instance(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn pop_frame(&self, thread: jni::jthread) -> Result<(), jvmti::jvmtiError> {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn force_early_return_object(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn force_early_return_int(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn force_early_return_long(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn force_early_return_float(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn force_early_return_double(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn force_early_return_void(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_stack_trace(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_thread_list_stack_traces(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_named_module(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_class_status(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_source_file_name(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_class_modifiers(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_class_methods(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_class_fields(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_implemented_interfaces(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn is_interface(&self, klass: jni::jclass) -> Result<bool, jvmti::jvmtiError> {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn is_array_class(&self, klass: jni::jclass) -> Result<bool, jvmti::jvmtiError> {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_class_loader(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_field_name(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_field_declaring_class(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_field_modifiers(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn is_field_synthetic(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_method_declaring_class(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_method_modifiers(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_max_locals(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_arguments_size(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_line_number_table(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_method_location(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_local_variable_table(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_bytecodes(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn is_method_native(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn is_method_synthetic(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn is_method_obsolete(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_classloader_classes(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_object_hash_code(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_object_monitor_usage(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_tag(&self, object: jni::jobject) -> Result<jni::jlong, jvmti::jvmtiError> {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn set_tag(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn iterate_over_objects_reachable_from_object(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn iterate_over_reachable_objects(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn iterate_over_heap(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn iterate_over_instances_of_class(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn follow_references(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn iterate_through_heap(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_object_size(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn set_breakpoint(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn clear_breakpoint(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn set_field_access_watch(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn clear_field_access_watch(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn set_field_modification_watch(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn clear_field_modification_watch(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn is_modifiable_class(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn retransform_classes(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn is_modifiable_module(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn add_module_reads(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn add_module_exports(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn add_module_opens(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn add_module_uses(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn add_module_provides(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_source_debug_extension(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_thread_local_storage(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn set_thread_local_storage(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn suspend_all_virtual_threads(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn resume_all_virtual_threads(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn set_jni_function_table(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_thread_cpu_time(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_class_version_numbers(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_constant_pool(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn set_environment_local_storage(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn get_owned_monitor_stack_depth_info(
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn clear_all_frame_pops(
+src/jvmti_wrapper.rs	unsafe {
+src/lib.rs	//! if unsafe { jvmti_env.set_event_notification_mode(
+src/lib.rs	//! let Some(out_field) = (unsafe {
+src/lib.rs	//! let out = unsafe { jni.get_static_object_field(system_class, out_field) };
+src/lib.rs	//! let Some(println_method) = (unsafe {
+src/lib.rs	//! unsafe { jni.call_void_method(out, println_method, &[jni::jvalue { l: message }]) };
+src/lib.rs	pub unsafe fn __agent_on_load<A>(
+src/lib.rs	let context = unsafe { agent::AgentLoadContext::from_raw(vm, options, reserved) }
+src/lib.rs	pub unsafe fn __agent_on_attach<A>(
+src/lib.rs	let context = unsafe { agent::AgentLoadContext::from_raw(vm, options, reserved) }
+src/lib.rs	pub unsafe fn __agent_on_unload(vm: *mut jni::JavaVM) {
+src/lib.rs	if let Some(context) = unsafe { agent::AgentUnloadContext::from_raw(vm) } {
+src/lib.rs	if let Some($context) = unsafe {
+src/lib.rs	unsafe extern "system" fn trampoline_method_entry(
+src/lib.rs	unsafe extern "system" fn trampoline_method_exit(
+src/lib.rs	unsafe extern "system" fn trampoline_native_method_bind(
+src/lib.rs	unsafe { *new_address_ptr = std::ptr::null_mut() };
+src/lib.rs	unsafe extern "system" fn trampoline_vm_init(
+src/lib.rs	unsafe extern "system" fn trampoline_vm_death(env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv) {
+src/lib.rs	unsafe extern "system" fn trampoline_vm_start(env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv) {
+src/lib.rs	unsafe extern "system" fn trampoline_thread_start(
+src/lib.rs	unsafe extern "system" fn trampoline_thread_end(
+src/lib.rs	unsafe extern "system" fn trampoline_virtual_thread_start(
+src/lib.rs	unsafe extern "system" fn trampoline_virtual_thread_end(
+src/lib.rs	unsafe extern "system" fn trampoline_class_load(
+src/lib.rs	unsafe extern "system" fn trampoline_class_prepare(
+src/lib.rs	unsafe extern "system" fn trampoline_class_file_load_hook(
+src/lib.rs	unsafe { *new_class_data_len = 0 };
+src/lib.rs	unsafe { *new_class_data = std::ptr::null_mut() };
+src/lib.rs	unsafe extern "system" fn trampoline_compiled_method_load(
+src/lib.rs	unsafe extern "system" fn trampoline_compiled_method_unload(
+src/lib.rs	unsafe extern "system" fn trampoline_dynamic_code_generated(
+src/lib.rs	unsafe extern "system" fn trampoline_data_dump_request(env: *mut jvmti::jvmtiEnv) {
+src/lib.rs	unsafe extern "system" fn trampoline_exception(
+src/lib.rs	unsafe extern "system" fn trampoline_exception_catch(
+src/lib.rs	unsafe extern "system" fn trampoline_single_step(
+src/lib.rs	unsafe extern "system" fn trampoline_breakpoint(
+src/lib.rs	unsafe extern "system" fn trampoline_frame_pop(
+src/lib.rs	unsafe extern "system" fn trampoline_monitor_wait(
+src/lib.rs	unsafe extern "system" fn trampoline_monitor_waited(
+src/lib.rs	unsafe extern "system" fn trampoline_monitor_contended_enter(
+src/lib.rs	unsafe extern "system" fn trampoline_monitor_contended_entered(
+src/lib.rs	unsafe extern "system" fn trampoline_field_access(
+src/lib.rs	unsafe extern "system" fn trampoline_field_modification(
+src/lib.rs	unsafe extern "system" fn trampoline_garbage_collection_start(env: *mut jvmti::jvmtiEnv) {
+src/lib.rs	unsafe extern "system" fn trampoline_garbage_collection_finish(env: *mut jvmti::jvmtiEnv) {
+src/lib.rs	unsafe extern "system" fn trampoline_resource_exhausted(
+src/lib.rs	unsafe extern "system" fn trampoline_object_free(env: *mut jvmti::jvmtiEnv, tag: jni::jlong) {
+src/lib.rs	unsafe extern "system" fn trampoline_vm_object_alloc(
+src/lib.rs	unsafe extern "system" fn trampoline_sampled_object_alloc(
+src/lib.rs	/// if unsafe { jvmti.set_event_notification_mode(
+src/lib.rs	#[unsafe(no_mangle)]
+src/lib.rs	pub unsafe extern "system" fn Agent_OnLoad(
+src/lib.rs	unsafe { $crate::__agent_on_load::<$agent_type>(vm, options, reserved) }
+src/lib.rs	#[unsafe(no_mangle)]
+src/lib.rs	pub unsafe extern "system" fn Agent_OnAttach(
+src/lib.rs	unsafe { $crate::__agent_on_attach::<$agent_type>(vm, options, reserved) }
+src/lib.rs	#[unsafe(no_mangle)]
+src/lib.rs	pub unsafe extern "system" fn Agent_OnUnload(vm: *mut $crate::sys::jni::JavaVM) {
+src/lib.rs	unsafe { $crate::__agent_on_unload(vm) }
+src/mutf8.rs	unsafe { CString::from_vec_unchecked(encode(value)) }
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, size: jlong, mem_ptr: *mut *mut u8) -> jvmtiError;
+src/sys/jni.rs	pub type JvmtiDeallocFn = unsafe extern "system" fn(env: *mut jvmtiEnv, mem: *mut u8) -> jvmtiError;
+src/sys/jni.rs	pub type $name = unsafe extern "C" fn($($arg: $ty,)+ ...) -> $result;
+src/sys/jni.rs	pub GetVersion: unsafe extern "system" fn(env: *mut JNIEnv) -> jint,
+src/sys/jni.rs	pub DefineClass: unsafe extern "system" fn(
+src/sys/jni.rs	pub FindClass: unsafe extern "system" fn(env: *mut JNIEnv, name: *const c_char) -> jclass,
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, method: jobject) -> jmethodID,
+src/sys/jni.rs	pub FromReflectedField: unsafe extern "system" fn(env: *mut JNIEnv, field: jobject) -> jfieldID,
+src/sys/jni.rs	pub ToReflectedMethod: unsafe extern "system" fn(
+src/sys/jni.rs	pub GetSuperclass: unsafe extern "system" fn(env: *mut JNIEnv, sub: jclass) -> jclass,
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, sub: jclass, sup: jclass) -> jboolean,
+src/sys/jni.rs	pub ToReflectedField: unsafe extern "system" fn(
+src/sys/jni.rs	pub Throw: unsafe extern "system" fn(env: *mut JNIEnv, obj: jthrowable) -> jint,
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, clazz: jclass, msg: *const c_char) -> jint,
+src/sys/jni.rs	pub ExceptionOccurred: unsafe extern "system" fn(env: *mut JNIEnv) -> jthrowable,
+src/sys/jni.rs	pub ExceptionDescribe: unsafe extern "system" fn(env: *mut JNIEnv),
+src/sys/jni.rs	pub ExceptionClear: unsafe extern "system" fn(env: *mut JNIEnv),
+src/sys/jni.rs	pub FatalError: unsafe extern "system" fn(env: *mut JNIEnv, msg: *const c_char),
+src/sys/jni.rs	pub PushLocalFrame: unsafe extern "system" fn(env: *mut JNIEnv, capacity: jint) -> jint,
+src/sys/jni.rs	pub PopLocalFrame: unsafe extern "system" fn(env: *mut JNIEnv, result: jobject) -> jobject,
+src/sys/jni.rs	pub NewGlobalRef: unsafe extern "system" fn(env: *mut JNIEnv, lobj: jobject) -> jobject,
+src/sys/jni.rs	pub DeleteGlobalRef: unsafe extern "system" fn(env: *mut JNIEnv, gref: jobject),
+src/sys/jni.rs	pub DeleteLocalRef: unsafe extern "system" fn(env: *mut JNIEnv, obj: jobject),
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, obj1: jobject, obj2: jobject) -> jboolean,
+src/sys/jni.rs	pub NewLocalRef: unsafe extern "system" fn(env: *mut JNIEnv, ref_: jobject) -> jobject,
+src/sys/jni.rs	pub EnsureLocalCapacity: unsafe extern "system" fn(env: *mut JNIEnv, capacity: jint) -> jint,
+src/sys/jni.rs	pub AllocObject: unsafe extern "system" fn(env: *mut JNIEnv, clazz: jclass) -> jobject,
+src/sys/jni.rs	pub NewObjectV: unsafe extern "system" fn(
+src/sys/jni.rs	pub NewObjectA: unsafe extern "system" fn(
+src/sys/jni.rs	pub GetObjectClass: unsafe extern "system" fn(env: *mut JNIEnv, obj: jobject) -> jclass,
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, obj: jobject, clazz: jclass) -> jboolean,
+src/sys/jni.rs	pub GetMethodID: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallObjectMethodV: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallObjectMethodA: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallBooleanMethodV: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallBooleanMethodA: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallByteMethodV: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallByteMethodA: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallCharMethodV: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallCharMethodA: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallShortMethodV: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallShortMethodA: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallIntMethodV: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallIntMethodA: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallLongMethodV: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallLongMethodA: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallFloatMethodV: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallFloatMethodA: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallDoubleMethodV: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallDoubleMethodA: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallVoidMethodV: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallVoidMethodA: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallNonvirtualObjectMethodV: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallNonvirtualObjectMethodA: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallNonvirtualBooleanMethodV: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallNonvirtualBooleanMethodA: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallNonvirtualByteMethodV: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallNonvirtualByteMethodA: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallNonvirtualCharMethodV: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallNonvirtualCharMethodA: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallNonvirtualShortMethodV: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallNonvirtualShortMethodA: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallNonvirtualIntMethodV: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallNonvirtualIntMethodA: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallNonvirtualLongMethodV: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallNonvirtualLongMethodA: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallNonvirtualFloatMethodV: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallNonvirtualFloatMethodA: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallNonvirtualDoubleMethodV: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallNonvirtualDoubleMethodA: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallNonvirtualVoidMethodV: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallNonvirtualVoidMethodA: unsafe extern "system" fn(
+src/sys/jni.rs	pub GetFieldID: unsafe extern "system" fn(
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, obj: jobject, fieldID: jfieldID) -> jobject,
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, obj: jobject, fieldID: jfieldID) -> jboolean,
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, obj: jobject, fieldID: jfieldID) -> jbyte,
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, obj: jobject, fieldID: jfieldID) -> jchar,
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, obj: jobject, fieldID: jfieldID) -> jshort,
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, obj: jobject, fieldID: jfieldID) -> jint,
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, obj: jobject, fieldID: jfieldID) -> jlong,
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, obj: jobject, fieldID: jfieldID) -> jfloat,
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, obj: jobject, fieldID: jfieldID) -> jdouble,
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, obj: jobject, fieldID: jfieldID, val: jobject),
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, obj: jobject, fieldID: jfieldID, val: jboolean),
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, obj: jobject, fieldID: jfieldID, val: jbyte),
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, obj: jobject, fieldID: jfieldID, val: jchar),
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, obj: jobject, fieldID: jfieldID, val: jshort),
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, obj: jobject, fieldID: jfieldID, val: jint),
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, obj: jobject, fieldID: jfieldID, val: jlong),
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, obj: jobject, fieldID: jfieldID, val: jfloat),
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, obj: jobject, fieldID: jfieldID, val: jdouble),
+src/sys/jni.rs	pub GetStaticMethodID: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallStaticObjectMethodV: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallStaticObjectMethodA: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallStaticBooleanMethodV: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallStaticBooleanMethodA: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallStaticByteMethodV: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallStaticByteMethodA: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallStaticCharMethodV: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallStaticCharMethodA: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallStaticShortMethodV: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallStaticShortMethodA: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallStaticIntMethodV: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallStaticIntMethodA: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallStaticLongMethodV: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallStaticLongMethodA: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallStaticFloatMethodV: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallStaticFloatMethodA: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallStaticDoubleMethodV: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallStaticDoubleMethodA: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallStaticVoidMethodV: unsafe extern "system" fn(
+src/sys/jni.rs	pub CallStaticVoidMethodA: unsafe extern "system" fn(
+src/sys/jni.rs	pub GetStaticFieldID: unsafe extern "system" fn(
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, clazz: jclass, fieldID: jfieldID) -> jobject,
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, clazz: jclass, fieldID: jfieldID) -> jboolean,
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, clazz: jclass, fieldID: jfieldID) -> jbyte,
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, clazz: jclass, fieldID: jfieldID) -> jchar,
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, clazz: jclass, fieldID: jfieldID) -> jshort,
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, clazz: jclass, fieldID: jfieldID) -> jint,
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, clazz: jclass, fieldID: jfieldID) -> jlong,
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, clazz: jclass, fieldID: jfieldID) -> jfloat,
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, clazz: jclass, fieldID: jfieldID) -> jdouble,
+src/sys/jni.rs	pub SetStaticObjectField: unsafe extern "system" fn(
+src/sys/jni.rs	pub SetStaticBooleanField: unsafe extern "system" fn(
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, clazz: jclass, fieldID: jfieldID, value: jbyte),
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, clazz: jclass, fieldID: jfieldID, value: jchar),
+src/sys/jni.rs	pub SetStaticShortField: unsafe extern "system" fn(
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, clazz: jclass, fieldID: jfieldID, value: jint),
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, clazz: jclass, fieldID: jfieldID, value: jlong),
+src/sys/jni.rs	pub SetStaticFloatField: unsafe extern "system" fn(
+src/sys/jni.rs	pub SetStaticDoubleField: unsafe extern "system" fn(
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, unicode: *const jchar, len: jsize) -> jstring,
+src/sys/jni.rs	pub GetStringLength: unsafe extern "system" fn(env: *mut JNIEnv, str: jstring) -> jsize,
+src/sys/jni.rs	pub GetStringChars: unsafe extern "system" fn(
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, str: jstring, chars: *const jchar),
+src/sys/jni.rs	pub NewStringUTF: unsafe extern "system" fn(env: *mut JNIEnv, utf: *const c_char) -> jstring,
+src/sys/jni.rs	pub GetStringUTFLength: unsafe extern "system" fn(env: *mut JNIEnv, str: jstring) -> jsize,
+src/sys/jni.rs	pub GetStringUTFChars: unsafe extern "system" fn(
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, str: jstring, chars: *const c_char),
+src/sys/jni.rs	pub GetArrayLength: unsafe extern "system" fn(env: *mut JNIEnv, array: jarray) -> jsize,
+src/sys/jni.rs	pub NewObjectArray: unsafe extern "system" fn(
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, array: jobjectArray, index: jsize) -> jobject,
+src/sys/jni.rs	pub SetObjectArrayElement: unsafe extern "system" fn(
+src/sys/jni.rs	pub NewBooleanArray: unsafe extern "system" fn(env: *mut JNIEnv, len: jsize) -> jbooleanArray,
+src/sys/jni.rs	pub NewByteArray: unsafe extern "system" fn(env: *mut JNIEnv, len: jsize) -> jbyteArray,
+src/sys/jni.rs	pub NewCharArray: unsafe extern "system" fn(env: *mut JNIEnv, len: jsize) -> jcharArray,
+src/sys/jni.rs	pub NewShortArray: unsafe extern "system" fn(env: *mut JNIEnv, len: jsize) -> jshortArray,
+src/sys/jni.rs	pub NewIntArray: unsafe extern "system" fn(env: *mut JNIEnv, len: jsize) -> jintArray,
+src/sys/jni.rs	pub NewLongArray: unsafe extern "system" fn(env: *mut JNIEnv, len: jsize) -> jlongArray,
+src/sys/jni.rs	pub NewFloatArray: unsafe extern "system" fn(env: *mut JNIEnv, len: jsize) -> jfloatArray,
+src/sys/jni.rs	pub NewDoubleArray: unsafe extern "system" fn(env: *mut JNIEnv, len: jsize) -> jdoubleArray,
+src/sys/jni.rs	pub GetBooleanArrayElements: unsafe extern "system" fn(
+src/sys/jni.rs	pub GetByteArrayElements: unsafe extern "system" fn(
+src/sys/jni.rs	pub GetCharArrayElements: unsafe extern "system" fn(
+src/sys/jni.rs	pub GetShortArrayElements: unsafe extern "system" fn(
+src/sys/jni.rs	pub GetIntArrayElements: unsafe extern "system" fn(
+src/sys/jni.rs	pub GetLongArrayElements: unsafe extern "system" fn(
+src/sys/jni.rs	pub GetFloatArrayElements: unsafe extern "system" fn(
+src/sys/jni.rs	pub GetDoubleArrayElements: unsafe extern "system" fn(
+src/sys/jni.rs	pub ReleaseBooleanArrayElements: unsafe extern "system" fn(
+src/sys/jni.rs	pub ReleaseByteArrayElements: unsafe extern "system" fn(
+src/sys/jni.rs	pub ReleaseCharArrayElements: unsafe extern "system" fn(
+src/sys/jni.rs	pub ReleaseShortArrayElements: unsafe extern "system" fn(
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, array: jintArray, elems: *mut jint, mode: jint),
+src/sys/jni.rs	pub ReleaseLongArrayElements: unsafe extern "system" fn(
+src/sys/jni.rs	pub ReleaseFloatArrayElements: unsafe extern "system" fn(
+src/sys/jni.rs	pub ReleaseDoubleArrayElements: unsafe extern "system" fn(
+src/sys/jni.rs	pub GetBooleanArrayRegion: unsafe extern "system" fn(
+src/sys/jni.rs	pub GetByteArrayRegion: unsafe extern "system" fn(
+src/sys/jni.rs	pub GetCharArrayRegion: unsafe extern "system" fn(
+src/sys/jni.rs	pub GetShortArrayRegion: unsafe extern "system" fn(
+src/sys/jni.rs	pub GetIntArrayRegion: unsafe extern "system" fn(
+src/sys/jni.rs	pub GetLongArrayRegion: unsafe extern "system" fn(
+src/sys/jni.rs	pub GetFloatArrayRegion: unsafe extern "system" fn(
+src/sys/jni.rs	pub GetDoubleArrayRegion: unsafe extern "system" fn(
+src/sys/jni.rs	pub SetBooleanArrayRegion: unsafe extern "system" fn(
+src/sys/jni.rs	pub SetByteArrayRegion: unsafe extern "system" fn(
+src/sys/jni.rs	pub SetCharArrayRegion: unsafe extern "system" fn(
+src/sys/jni.rs	pub SetShortArrayRegion: unsafe extern "system" fn(
+src/sys/jni.rs	pub SetIntArrayRegion: unsafe extern "system" fn(
+src/sys/jni.rs	pub SetLongArrayRegion: unsafe extern "system" fn(
+src/sys/jni.rs	pub SetFloatArrayRegion: unsafe extern "system" fn(
+src/sys/jni.rs	pub SetDoubleArrayRegion: unsafe extern "system" fn(
+src/sys/jni.rs	pub RegisterNatives: unsafe extern "system" fn(
+src/sys/jni.rs	pub UnregisterNatives: unsafe extern "system" fn(env: *mut JNIEnv, clazz: jclass) -> jint,
+src/sys/jni.rs	pub MonitorEnter: unsafe extern "system" fn(env: *mut JNIEnv, obj: jobject) -> jint,
+src/sys/jni.rs	pub MonitorExit: unsafe extern "system" fn(env: *mut JNIEnv, obj: jobject) -> jint,
+src/sys/jni.rs	pub GetJavaVM: unsafe extern "system" fn(env: *mut JNIEnv, vm: *mut *mut JavaVM) -> jint,
+src/sys/jni.rs	pub GetStringRegion: unsafe extern "system" fn(
+src/sys/jni.rs	pub GetStringUTFRegion: unsafe extern "system" fn(
+src/sys/jni.rs	pub GetPrimitiveArrayCritical: unsafe extern "system" fn(
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, array: jarray, carray: *mut c_void, mode: jint),
+src/sys/jni.rs	pub GetStringCritical: unsafe extern "system" fn(
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, string: jstring, cstring: *const jchar),
+src/sys/jni.rs	pub NewWeakGlobalRef: unsafe extern "system" fn(env: *mut JNIEnv, obj: jobject) -> jweak,
+src/sys/jni.rs	pub DeleteWeakGlobalRef: unsafe extern "system" fn(env: *mut JNIEnv, ref_: jweak),
+src/sys/jni.rs	pub ExceptionCheck: unsafe extern "system" fn(env: *mut JNIEnv) -> jboolean,
+src/sys/jni.rs	pub NewDirectByteBuffer: unsafe extern "system" fn(
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, buf: jobject) -> *mut c_void,
+src/sys/jni.rs	pub GetDirectBufferCapacity: unsafe extern "system" fn(env: *mut JNIEnv, buf: jobject) -> jlong,
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, obj: jobject) -> jobjectRefType,
+src/sys/jni.rs	pub GetModule: unsafe extern "system" fn(env: *mut JNIEnv, clazz: jclass) -> jobject,
+src/sys/jni.rs	pub IsVirtualThread: unsafe extern "system" fn(env: *mut JNIEnv, obj: jobject) -> jboolean,
+src/sys/jni.rs	unsafe extern "system" fn(env: *mut JNIEnv, str: jstring) -> jlong,
+src/sys/jni.rs	pub HasIdentity: unsafe extern "system" fn(env: *mut JNIEnv, obj: jobject) -> jboolean,
+src/sys/jni.rs	pub DestroyJavaVM: unsafe extern "system" fn(vm: *mut JavaVM) -> jint,
+src/sys/jni.rs	pub AttachCurrentThread: unsafe extern "system" fn(
+src/sys/jni.rs	pub DetachCurrentThread: unsafe extern "system" fn(vm: *mut JavaVM) -> jint,
+src/sys/jni.rs	unsafe extern "system" fn(vm: *mut JavaVM, penv: *mut *mut c_void, version: jint) -> jint,
+src/sys/jni.rs	pub AttachCurrentThreadAsDaemon: unsafe extern "system" fn(
+src/sys/jni.rs	pub type JNI_CreateJavaVM = unsafe extern "system" fn(
+src/sys/jni.rs	unsafe extern "system" fn(vm_buf: *mut *mut JavaVM, buf_len: jsize, n_vms: *mut jsize) -> jint;
+src/sys/jvmti.rs	unsafe extern "system" fn(jvmti_env: *mut jvmtiEnv, jni_env: *mut JNIEnv, arg: *mut c_void);
+src/sys/jvmti.rs	pub type jvmtiHeapIterationCallback = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type jvmtiHeapReferenceCallback = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type jvmtiPrimitiveFieldCallback = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type jvmtiArrayPrimitiveValueCallback = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type jvmtiStringPrimitiveValueCallback = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type jvmtiReservedCallback = unsafe extern "system" fn();
+src/sys/jvmti.rs	pub type jvmtiHeapObjectCallback = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type jvmtiHeapRootCallback = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type jvmtiStackReferenceCallback = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type jvmtiObjectReferenceCallback = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type jvmtiExtensionFunction = unsafe extern "C" fn(jvmti_env: *mut jvmtiEnv, ...) -> jvmtiError;
+src/sys/jvmti.rs	pub type jvmtiExtensionEvent = unsafe extern "C" fn(jvmti_env: *mut jvmtiEnv, ...);
+src/sys/jvmti.rs	pub type JvmtiSetEventNotificationModeFn = unsafe extern "C" fn(
+src/sys/jvmti.rs	pub type JvmtiGetAllModulesFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetAllThreadsFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, thread: jthread) -> jvmtiError;
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, thread: jthread) -> jvmtiError;
+src/sys/jvmti.rs	pub type JvmtiStopThreadFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, thread: jthread) -> jvmtiError;
+src/sys/jvmti.rs	pub type JvmtiGetThreadInfoFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetOwnedMonitorInfoFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetCurrentContendedMonitorFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiRunAgentThreadFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetTopThreadGroupsFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetThreadGroupInfoFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetThreadGroupChildrenFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetFrameCountFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetThreadStateFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, thread_ptr: *mut jthread) -> jvmtiError;
+src/sys/jvmti.rs	pub type JvmtiGetFrameLocationFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, thread: jthread, depth: jint) -> jvmtiError;
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, thread: jthread) -> jvmtiError;
+src/sys/jvmti.rs	pub type JvmtiGetLocalObjectFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetLocalIntFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetLocalLongFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetLocalFloatFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetLocalDoubleFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiSetLocalObjectFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiSetLocalIntFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiSetLocalLongFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiSetLocalFloatFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiSetLocalDoubleFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiCreateRawMonitorFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, monitor: jrawMonitorID) -> jvmtiError;
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, monitor: jrawMonitorID) -> jvmtiError;
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, monitor: jrawMonitorID) -> jvmtiError;
+src/sys/jvmti.rs	pub type JvmtiRawMonitorWaitFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, monitor: jrawMonitorID) -> jvmtiError;
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, monitor: jrawMonitorID) -> jvmtiError;
+src/sys/jvmti.rs	pub type JvmtiSetBreakpointFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiClearBreakpointFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetNamedModuleFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, klass: jclass, field: jfieldID) -> jvmtiError;
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, klass: jclass, field: jfieldID) -> jvmtiError;
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, klass: jclass, field: jfieldID) -> jvmtiError;
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, klass: jclass, field: jfieldID) -> jvmtiError;
+src/sys/jvmti.rs	pub type JvmtiIsModifiableClassFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiAllocateFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, mem: *mut c_uchar) -> jvmtiError;
+src/sys/jvmti.rs	pub type JvmtiGetClassSignatureFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetClassStatusFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetSourceFileNameFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetClassModifiersFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetClassMethodsFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetClassFieldsFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetImplementedInterfacesFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiIsInterfaceFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiIsArrayClassFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetClassLoaderFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetObjectHashCodeFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetObjectMonitorUsageFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetFieldNameFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetFieldDeclaringClassFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetFieldModifiersFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiIsFieldSyntheticFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetMethodNameFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetMethodDeclaringClassFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetMethodModifiersFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetMaxLocalsFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetArgumentsSizeFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetLineNumberTableFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetMethodLocationFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetLocalVariableTableFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiSetNativeMethodPrefixFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiSetNativeMethodPrefixesFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetBytecodesFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiIsMethodNativeFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiIsMethodSyntheticFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetLoadedClassesFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetClassLoaderClassesFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, thread: jthread) -> jvmtiError;
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, thread: jthread, value: jobject) -> jvmtiError;
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, thread: jthread, value: jint) -> jvmtiError;
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, thread: jthread, value: jlong) -> jvmtiError;
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, thread: jthread, value: jfloat) -> jvmtiError;
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, thread: jthread, value: jdouble) -> jvmtiError;
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, thread: jthread) -> jvmtiError;
+src/sys/jvmti.rs	pub type JvmtiRedefineClassesFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, version_ptr: *mut jint) -> jvmtiError;
+src/sys/jvmti.rs	pub type JvmtiGetCapabilitiesFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetSourceDebugExtensionFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiIsMethodObsoleteFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiSuspendThreadListFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiResumeThreadListFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiAddModuleReadsFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiAddModuleExportsFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiAddModuleOpensFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, module: jobject, service: jclass) -> jvmtiError;
+src/sys/jvmti.rs	pub type JvmtiAddModuleProvidesFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiIsModifiableModuleFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetAllStackTracesFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetThreadListStackTracesFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetThreadLocalStorageFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiSetThreadLocalStorageFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetStackTraceFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetTagFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, object: jobject, tag: jlong) -> jvmtiError;
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv) -> jvmtiError;
+src/sys/jvmti.rs	pub type JvmtiIterateOverObjectsReachableFromObjectFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiIterateOverReachableObjectsFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiIterateOverHeapFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiIterateOverInstancesOfClassFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetObjectsWithTagsFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiFollowReferencesFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiIterateThroughHeapFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiSuspendAllVirtualThreadsFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiResumeAllVirtualThreadsFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiSetJNIFunctionTableFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetJNIFunctionTableFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiSetEventCallbacksFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, event_type: jvmtiEvent) -> jvmtiError;
+src/sys/jvmti.rs	pub type JvmtiGetExtensionFunctionsFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetExtensionEventsFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiSetExtensionEventCallbackFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiDisposeEnvironmentFn = unsafe extern "system" fn(env: *mut jvmtiEnv) -> jvmtiError;
+src/sys/jvmti.rs	pub type JvmtiGetErrorNameFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetJLocationFormatFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetSystemPropertiesFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetSystemPropertyFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiSetSystemPropertyFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, phase_ptr: *mut jvmtiPhase) -> jvmtiError;
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, info_ptr: *mut jvmtiTimerInfo) -> jvmtiError;
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, nanos_ptr: *mut jlong) -> jvmtiError;
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, info_ptr: *mut jvmtiTimerInfo) -> jvmtiError;
+src/sys/jvmti.rs	pub type JvmtiGetThreadCpuTimeFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, info_ptr: *mut jvmtiTimerInfo) -> jvmtiError;
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, nanos_ptr: *mut jlong) -> jvmtiError;
+src/sys/jvmti.rs	pub type JvmtiGetPotentialCapabilitiesFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiAddCapabilitiesFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiRelinquishCapabilitiesFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, processors_ptr: *mut jint) -> jvmtiError;
+src/sys/jvmti.rs	pub type JvmtiGetClassVersionNumbersFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetConstantPoolFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, data_ptr: *mut *mut c_void) -> jvmtiError;
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, data: *const c_void) -> jvmtiError;
+src/sys/jvmti.rs	pub type JvmtiAddToBootstrapClassLoaderSearchFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiSetVerboseFlagFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiAddToSystemClassLoaderSearchFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiRetransformClassesFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetOwnedMonitorStackDepthInfoFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetObjectSizeFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGetLocalInstanceFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	unsafe extern "system" fn(env: *mut jvmtiEnv, sampling_interval: jint) -> jvmtiError;
+src/sys/jvmti.rs	unsafe extern "system" fn(jvmti_env: *mut jvmtiEnv, jni_env: *mut JNIEnv, thread: jthread);
+src/sys/jvmti.rs	pub type JvmtiVMDeathFn = unsafe extern "system" fn(jvmti_env: *mut jvmtiEnv, jni_env: *mut JNIEnv);
+src/sys/jvmti.rs	pub type JvmtiVMStartFn = unsafe extern "system" fn(jvmti_env: *mut jvmtiEnv, jni_env: *mut JNIEnv);
+src/sys/jvmti.rs	unsafe extern "system" fn(jvmti_env: *mut jvmtiEnv, jni_env: *mut JNIEnv, thread: jthread);
+src/sys/jvmti.rs	unsafe extern "system" fn(jvmti_env: *mut jvmtiEnv, jni_env: *mut JNIEnv, thread: jthread);
+src/sys/jvmti.rs	pub type JvmtiClassFileLoadHookFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiClassLoadFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiClassPrepareFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiExceptionFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiExceptionCatchFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiSingleStepFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiBreakpointFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiFramePopFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiFieldAccessFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiFieldModificationFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiMethodEntryFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiMethodExitFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiNativeMethodBindFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiCompiledMethodLoadFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiCompiledMethodUnloadFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiDynamicCodeGeneratedFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiDataDumpRequestFn = unsafe extern "system" fn(jvmti_env: *mut jvmtiEnv);
+src/sys/jvmti.rs	pub type JvmtiEventReservedFn = unsafe extern "system" fn();
+src/sys/jvmti.rs	pub type JvmtiMonitorWaitFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiMonitorWaitedFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiMonitorContendedEnterFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiMonitorContendedEnteredFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiResourceExhaustedFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiGarbageCollectionStartFn = unsafe extern "system" fn(jvmti_env: *mut jvmtiEnv);
+src/sys/jvmti.rs	pub type JvmtiGarbageCollectionFinishFn = unsafe extern "system" fn(jvmti_env: *mut jvmtiEnv);
+src/sys/jvmti.rs	pub type JvmtiObjectFreeFn = unsafe extern "system" fn(jvmti_env: *mut jvmtiEnv, tag: jlong);
+src/sys/jvmti.rs	pub type JvmtiVMObjectAllocFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiSampledObjectAllocFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiVirtualThreadStartFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	pub type JvmtiVirtualThreadEndFn = unsafe extern "system" fn(
+src/sys/jvmti.rs	unsafe { std::mem::zeroed() }

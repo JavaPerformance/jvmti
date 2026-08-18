@@ -3,11 +3,14 @@ use jvmti_bindings::prelude::*;
 #[derive(Default)]
 struct MyAgent;
 
-impl Agent for MyAgent {
-    fn on_load(&self, vm: *mut jni::JavaVM, options: &str) -> jni::jint {
-        eprintln!("[agent] on_load: {}", options);
+impl MyAgent {
+    fn initialize(&self, context: AgentLoadContext<'_>, entry_point: &str) -> jni::jint {
+        eprintln!(
+            "[agent] {entry_point}: {}",
+            context.options_lossy().as_deref().unwrap_or("")
+        );
 
-        let jvmti = match Jvmti::new(vm) {
+        let jvmti = match context.vm().jvmti() {
             Ok(env) => env,
             Err(e) => {
                 eprintln!("[agent] Failed to get JVMTI: {:?}", e);
@@ -22,42 +25,42 @@ impl Agent for MyAgent {
             return jni::JNI_ERR;
         }
 
-        let callbacks = get_default_callbacks();
-        if let Err(e) = jvmti.set_event_callbacks(callbacks) {
+        if let Err(e) = jvmti.set_default_agent_callbacks() {
             eprintln!("[agent] Failed to set callbacks: {:?}", e);
             return jni::JNI_ERR;
         }
 
-        if let Err(e) = jvmti.enable_events_global(&[jvmti::JVMTI_EVENT_CLASS_FILE_LOAD_HOOK]) {
+        if let Err(e) = jvmti.enable_class_file_load_hook_events() {
             eprintln!("[agent] Failed to enable events: {:?}", e);
             return jni::JNI_ERR;
         }
 
         jni::JNI_OK
     }
+}
+
+impl Agent for MyAgent {
+    fn on_load(&self, context: AgentLoadContext<'_>) -> jni::jint {
+        self.initialize(context, "on_load")
+    }
+
+    fn on_attach(&self, context: AgentLoadContext<'_>) -> jni::jint {
+        self.initialize(context, "on_attach")
+    }
 
     fn class_file_load_hook(
         &self,
-        _jni: *mut jni::JNIEnv,
-        _class_being_redefined: jni::jclass,
-        _loader: jni::jobject,
-        name: *const std::os::raw::c_char,
-        _protection_domain: jni::jobject,
-        class_data_len: jni::jint,
-        _class_data: *const u8,
-        _new_class_data_len: *mut jni::jint,
-        _new_class_data: *mut *mut u8,
+        _context: CallbackContext<'_>,
+        event: ClassFileLoadHookEvent<'_>,
     ) {
-        let class_name = if name.is_null() {
-            "<unknown>".to_string()
-        } else {
-            unsafe { std::ffi::CStr::from_ptr(name) }
-                .to_str()
-                .unwrap_or("<invalid>")
-                .to_string()
-        };
+        let decoded_name = event.name_str().ok().flatten();
+        let class_name = decoded_name.as_deref().unwrap_or("<unknown>");
 
-        eprintln!("[agent] Loaded: {} ({} bytes)", class_name, class_data_len);
+        eprintln!(
+            "[agent] Loaded: {} ({} bytes)",
+            class_name,
+            event.class_data().len()
+        );
     }
 }
 

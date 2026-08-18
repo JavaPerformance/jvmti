@@ -1,14 +1,15 @@
 # jvmti - Complete JNI/JVMTI bindings for Rust
 #
-# Zero dependencies by default. Verified against JDK 27. Compatible with JDK 8+.
+# Zero third-party crate dependencies across every feature and development target.
+# Source-ABI verified against pinned OpenJDK 8-28 revisions; live-tested through JDK 27.
 
 [package]
 name = "jvmti-bindings"
-version = "2.3.0"
-edition = "2021"
-rust-version = "1.70"
+version = "3.0.0"
+edition = "2024"
+rust-version = "1.85"
 
-description = "Complete JNI and JVMTI bindings for Rust with zero dependencies by default. Build JVM agents in pure Rust."
+description = "Complete JNI and JVMTI bindings for Rust with zero third-party crate dependencies. Build JVM agents in pure Rust."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/JavaPerformance/jvmti"
 documentation = "https://docs.rs/jvmti-bindings"
@@ -17,20 +18,13 @@ keywords = ["jvm", "jni", "jvmti", "java", "agent"]
 categories = ["api-bindings", "development-tools::profiling", "external-ffi-bindings"]
 
 [dependencies]
-# No external dependencies by default - all JNI/JVMTI bindings are internal.
-# Optional features enable helper dependencies for embedding and benchmark tools.
-zip = { version = "0.6", optional = true }
-libloading = { version = "0.8", optional = true }
+# Intentionally empty. Every feature and development target is crate-free.
 
 [features]
 default = []
 advanced = []
 heap-graph = ["advanced"]
-bench-tools = ["zip"]
-embed = ["libloading"]
-
-[dev-dependencies]
-criterion = "0.5"
+embed = []
 
 [lib]
 crate-type = ["rlib"]
@@ -47,7 +41,7 @@ all-features = true
 #   crate-type = ["cdylib"]
 #
 #   [dependencies]
-#   jvmti-bindings = "2"
+#   jvmti-bindings = "3"
 
 [[example]]
 name = "minimal"
@@ -82,6 +76,22 @@ name = "event_abi_smoke"
 crate-type = ["cdylib"]
 
 [[example]]
+name = "callback_idle_bench"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "callback_noop_bench"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "callback_counter_bench"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "callback_allocation_audit"
+crate-type = ["cdylib"]
+
+[[example]]
 name = "embed"
 required-features = ["embed"]
 
@@ -92,4 +102,3 @@ harness = false
 [[bin]]
 name = "jar_parse_bench"
 path = "src/bin/jar_parse_bench.rs"
-required-features = ["bench-tools"]

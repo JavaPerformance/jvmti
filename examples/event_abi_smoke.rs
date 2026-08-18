@@ -16,8 +16,8 @@ struct EventAbiSmokeAgent {
 }
 
 impl Agent for EventAbiSmokeAgent {
-    fn on_load(&self, vm: *mut jni::JavaVM, _options: &str) -> jni::jint {
-        let jvmti = match Jvmti::new(vm) {
+    fn on_load(&self, context: AgentLoadContext<'_>) -> jni::jint {
+        let jvmti = match context.vm().jvmti() {
             Ok(env) => env,
             Err(error) => {
                 eprintln!("[event-abi] cannot acquire JVMTI: {error:?}");
@@ -51,19 +51,19 @@ impl Agent for EventAbiSmokeAgent {
         jni::JNI_OK
     }
 
-    fn method_entry(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread, _method: jni::jmethodID) {
+    fn method_entry(&self, _context: CallbackContext<'_>, _event: MethodEvent) {
         self.method_entries.fetch_add(1, Ordering::Relaxed);
     }
 
-    fn garbage_collection_start(&self) {
+    fn garbage_collection_start(&self, _context: CallbackContext<'_>) {
         self.gc_starts.fetch_add(1, Ordering::Relaxed);
     }
 
-    fn garbage_collection_finish(&self) {
+    fn garbage_collection_finish(&self, _context: CallbackContext<'_>) {
         self.gc_finishes.fetch_add(1, Ordering::Relaxed);
     }
 
-    fn vm_death(&self, _jni: *mut jni::JNIEnv) {
+    fn vm_death(&self, _context: CallbackContext<'_>) {
         eprintln!(
             "[event-abi] PASS method_entries={} gc_starts={} gc_finishes={}",
             self.method_entries.load(Ordering::Relaxed),

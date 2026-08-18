@@ -2,24 +2,157 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
-  build:
+  test:
+    name: ${{ matrix.os }} / Rust ${{ matrix.toolchain }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
+        toolchain: [1.85.0, stable]
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Cargo check
-        run: cargo check
-      - name: Cargo test
-        run: cargo test
-      - name: Cargo doc tests
-        run: cargo test --doc
-      - name: Cargo test (all features)
-        run: cargo test --all-features
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          components: clippy
+      - name: Check every target and feature
+        run: cargo check --locked --all-targets --all-features
+      - name: Test default features
+        run: cargo test --locked
+      - name: Test all features
+        run: cargo test --locked --all-features
+      - name: Deny Clippy diagnostics
+        run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - name: Build examples
-        run: cargo build --examples
+        run: cargo build --locked --examples --all-features
+      - name: Prove the host C va_list calling convention
+        if: runner.os != 'Windows'
+        run: scripts/check-host-va-list-abi.sh
+      - name: Compile the published agent starter
+        if: runner.os == 'Linux'
+        run: scripts/check-agent-template.sh
+
+  quality:
+    name: Formatting, docs, and dependency contract / Rust ${{ matrix.toolchain }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [1.85.0, stable]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          components: rustfmt
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: 25
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Test documentation
+        run: cargo test --locked --doc --all-features
+      - name: Build documentation with warnings denied
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --locked --no-deps --all-features
+      - name: Prove the zero-dependency contract
+        run: scripts/check-zero-dependencies.sh
+      - name: Prove high-level wrapper coverage
+        run: scripts/check-wrapper-coverage.sh
+      - name: Prove ABI-equivalent wrapper argument forwarding
+        run: scripts/check-wrapper-forwarding.py
+      - name: Prove public API extensibility
+        run: scripts/check-public-api-extensibility.py
+      - name: Require review for every unsafe-boundary change
+        run: scripts/check-unsafe-surface.py
+      - name: Parse the complete current-JDK class-file corpus
+        run: scripts/check-classfile-corpus.sh "$JAVA_HOME"
+      - name: Compile an external agent from the packaged crate
+        run: scripts/check-packaged-agent-template.sh
+      - name: Compile both packaged downstream consumer canaries
+        run: scripts/check-downstream-canaries.sh
+
+  public-api-contract:
+    name: Reviewed 3.0 API baseline and 3.x SemVer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: stable
+      - name: Install pinned API analysis tools
+        run: |
+          rustup toolchain install nightly-2026-08-17 --profile minimal
+          cargo +stable install cargo-public-api --version 0.52.0 --locked
+          cargo +stable install cargo-semver-checks --version 0.42.0 --locked
+      - name: Compare with the reviewed candidate baseline
+        run: scripts/check-public-api-baseline.sh
+      - name: Enforce compatibility with tagged 3.0.0 when available
+        shell: bash
+        run: |
+          if git rev-parse --verify 'v3.0.0^{commit}' >/dev/null 2>&1; then
+            scripts/check-3x-api-compat.sh v3.0.0 HEAD
+          else
+            echo "v3.0.0 is not tagged yet; candidate baseline gate passed"
+          fi
+
+  miri-ownership:
+    name: Pinned Miri ownership and Modified UTF-8 proofs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: nightly-2026-08-17
+          components: miri
+      - name: Prepare the pinned Miri sysroot
+        shell: bash
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/target/tool-tmp"
+          TMPDIR="$GITHUB_WORKSPACE/target/tool-tmp" cargo +nightly-2026-08-17 miri setup
+      - name: Check ownership and Modified UTF-8 boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/target/tool-tmp"
+          for test in mutf8 jni_mutf8_validation ownership jni_ownership raw_monitor_ownership; do
+            TMPDIR="$GITHUB_WORKSPACE/target/tool-tmp" \
+              CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target/miri-ci" \
+              cargo +nightly-2026-08-17 miri test --locked --test "$test"
+          done
+
+  latest-openjdk-abi:
+    name: Pinned OpenJDK 28 complete raw ABI / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: 1.85.0
+      - name: Install header and binding tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes xsltproc
+          cargo install bindgen-cli --version 0.72.1 --locked
+      - name: Compare every signature, table, callback, constant, layout, and capability bit
+        run: scripts/check-pinned-jdk-abi.sh 28

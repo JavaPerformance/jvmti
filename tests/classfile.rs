@@ -1,4 +1,7 @@
-use jvmti_bindings::classfile::{AttributeInfo, ClassFile};
+use jvmti_bindings::{
+    classfile::{AttributeInfo, ClassFile, ClassFileError, ClassFileParseLimits},
+    mutf8,
+};
 
 struct CpBuilder {
     entries: Vec<Vec<u8>>,
@@ -6,7 +9,9 @@ struct CpBuilder {
 
 impl CpBuilder {
     fn new() -> Self {
-        Self { entries: Vec::new() }
+        Self {
+            entries: Vec::new(),
+        }
     }
 
     fn push(&mut self, entry: Vec<u8>) -> u16 {
@@ -15,10 +20,14 @@ impl CpBuilder {
     }
 
     fn utf8(&mut self, s: &str) -> u16 {
+        self.raw_utf8(&mutf8::encode(s))
+    }
+
+    fn raw_utf8(&mut self, bytes: &[u8]) -> u16 {
         let mut entry = Vec::new();
         entry.push(1);
-        entry.extend_from_slice(&(s.len() as u16).to_be_bytes());
-        entry.extend_from_slice(s.as_bytes());
+        entry.extend_from_slice(&(bytes.len() as u16).to_be_bytes());
+        entry.extend_from_slice(bytes);
         self.push(entry)
     }
 
@@ -65,6 +74,32 @@ impl CpBuilder {
         entry.extend_from_slice(&name_index.to_be_bytes());
         self.push(entry)
     }
+}
+
+fn build_minimal_class_with_extra_utf8(bytes: &[u8]) -> (Vec<u8>, u16) {
+    let mut cp = CpBuilder::new();
+    let test_name = cp.utf8("Test");
+    let test_class = cp.class(test_name);
+    let object_name = cp.utf8("java/lang/Object");
+    let object_class = cp.class(object_name);
+    let extra = cp.raw_utf8(bytes);
+
+    let mut out = Vec::new();
+    u4(&mut out, 0xCAFEBABE);
+    u2(&mut out, 0);
+    u2(&mut out, 52);
+    u2(&mut out, (cp.entries.len() + 1) as u16);
+    for entry in cp.entries {
+        out.extend_from_slice(&entry);
+    }
+    u2(&mut out, 0x0021);
+    u2(&mut out, test_class);
+    u2(&mut out, object_class);
+    u2(&mut out, 0); // interfaces
+    u2(&mut out, 0); // fields
+    u2(&mut out, 0); // methods
+    u2(&mut out, 0); // attributes
+    (out, extra)
 }
 
 fn u1(out: &mut Vec<u8>, v: u8) {
@@ -351,7 +386,11 @@ fn build_test_class() -> Vec<u8> {
 
     let mut module_resolution_info = Vec::new();
     u2(&mut module_resolution_info, 0);
-    push_attr(&mut class_attrs, utf_module_resolution, &module_resolution_info);
+    push_attr(
+        &mut class_attrs,
+        utf_module_resolution,
+        &module_resolution_info,
+    );
 
     let mut nest_host_info = Vec::new();
     u2(&mut nest_host_info, class_object);
@@ -390,47 +429,270 @@ fn parses_all_attributes() {
     let classfile = ClassFile::parse(&bytes).expect("parse class file");
 
     let class_attrs = &classfile.attributes;
-    assert!(class_attrs.iter().any(|a| matches!(a, AttributeInfo::SourceFile { .. })));
-    assert!(class_attrs.iter().any(|a| matches!(a, AttributeInfo::SourceDebugExtension { .. })));
-    assert!(class_attrs.iter().any(|a| matches!(a, AttributeInfo::Signature { .. })));
-    assert!(class_attrs.iter().any(|a| matches!(a, AttributeInfo::Deprecated)));
-    assert!(class_attrs.iter().any(|a| matches!(a, AttributeInfo::Synthetic)));
-    assert!(class_attrs.iter().any(|a| matches!(a, AttributeInfo::RuntimeVisibleAnnotations { .. })));
-    assert!(class_attrs.iter().any(|a| matches!(a, AttributeInfo::RuntimeInvisibleAnnotations { .. })));
-    assert!(class_attrs.iter().any(|a| matches!(a, AttributeInfo::RuntimeVisibleTypeAnnotations { .. })));
-    assert!(class_attrs.iter().any(|a| matches!(a, AttributeInfo::RuntimeInvisibleTypeAnnotations { .. })));
-    assert!(class_attrs.iter().any(|a| matches!(a, AttributeInfo::BootstrapMethods { .. })));
-    assert!(class_attrs.iter().any(|a| matches!(a, AttributeInfo::InnerClasses { .. })));
-    assert!(class_attrs.iter().any(|a| matches!(a, AttributeInfo::EnclosingMethod { .. })));
-    assert!(class_attrs.iter().any(|a| matches!(a, AttributeInfo::Module { .. })));
-    assert!(class_attrs.iter().any(|a| matches!(a, AttributeInfo::ModulePackages { .. })));
-    assert!(class_attrs.iter().any(|a| matches!(a, AttributeInfo::ModuleMainClass { .. })));
-    assert!(class_attrs.iter().any(|a| matches!(a, AttributeInfo::ModuleHashes { .. })));
-    assert!(class_attrs.iter().any(|a| matches!(a, AttributeInfo::ModuleTarget { .. })));
-    assert!(class_attrs.iter().any(|a| matches!(a, AttributeInfo::ModuleResolution { .. })));
-    assert!(class_attrs.iter().any(|a| matches!(a, AttributeInfo::NestHost { .. })));
-    assert!(class_attrs.iter().any(|a| matches!(a, AttributeInfo::NestMembers { .. })));
-    assert!(class_attrs.iter().any(|a| matches!(a, AttributeInfo::Record { .. })));
-    assert!(class_attrs.iter().any(|a| matches!(a, AttributeInfo::PermittedSubclasses { .. })));
-    assert!(class_attrs.iter().any(|a| matches!(a, AttributeInfo::Unknown { .. })));
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::SourceFile { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::SourceDebugExtension { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::Signature { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::Deprecated))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::Synthetic))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::RuntimeVisibleAnnotations { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::RuntimeInvisibleAnnotations { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::RuntimeVisibleTypeAnnotations { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::RuntimeInvisibleTypeAnnotations { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::BootstrapMethods { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::InnerClasses { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::EnclosingMethod { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::Module { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::ModulePackages { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::ModuleMainClass { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::ModuleHashes { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::ModuleTarget { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::ModuleResolution { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::NestHost { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::NestMembers { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::Record { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::PermittedSubclasses { .. }))
+    );
+    assert!(
+        class_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::Unknown { .. }))
+    );
 
     let field_attrs = &classfile.fields[0].attributes;
-    assert!(field_attrs.iter().any(|a| matches!(a, AttributeInfo::ConstantValue { .. })));
+    assert!(
+        field_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::ConstantValue { .. }))
+    );
 
     let method_attrs = &classfile.methods[0].attributes;
-    assert!(method_attrs.iter().any(|a| matches!(a, AttributeInfo::Exceptions { .. })));
-    assert!(method_attrs.iter().any(|a| matches!(a, AttributeInfo::MethodParameters { .. })));
-    assert!(method_attrs.iter().any(|a| matches!(a, AttributeInfo::RuntimeVisibleParameterAnnotations { .. })));
-    assert!(method_attrs.iter().any(|a| matches!(a, AttributeInfo::RuntimeInvisibleParameterAnnotations { .. })));
-    assert!(method_attrs.iter().any(|a| matches!(a, AttributeInfo::AnnotationDefault { .. })));
+    assert!(
+        method_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::Exceptions { .. }))
+    );
+    assert!(
+        method_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::MethodParameters { .. }))
+    );
+    assert!(
+        method_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::RuntimeVisibleParameterAnnotations { .. }))
+    );
+    assert!(method_attrs.iter().any(|a| matches!(
+        a,
+        AttributeInfo::RuntimeInvisibleParameterAnnotations { .. }
+    )));
+    assert!(
+        method_attrs
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::AnnotationDefault { .. }))
+    );
 
     let code_attr = method_attrs
         .iter()
-        .find_map(|a| if let AttributeInfo::Code(code) = a { Some(code) } else { None })
+        .find_map(|a| {
+            if let AttributeInfo::Code(code) = a {
+                Some(code)
+            } else {
+                None
+            }
+        })
         .expect("code attr");
 
-    assert!(code_attr.attributes.iter().any(|a| matches!(a, AttributeInfo::LineNumberTable { .. })));
-    assert!(code_attr.attributes.iter().any(|a| matches!(a, AttributeInfo::LocalVariableTable { .. })));
-    assert!(code_attr.attributes.iter().any(|a| matches!(a, AttributeInfo::LocalVariableTypeTable { .. })));
-    assert!(code_attr.attributes.iter().any(|a| matches!(a, AttributeInfo::StackMapTable { .. })));
+    assert!(
+        code_attr
+            .attributes
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::LineNumberTable { .. }))
+    );
+    assert!(
+        code_attr
+            .attributes
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::LocalVariableTable { .. }))
+    );
+    assert!(
+        code_attr
+            .attributes
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::LocalVariableTypeTable { .. }))
+    );
+    assert!(
+        code_attr
+            .attributes
+            .iter()
+            .any(|a| matches!(a, AttributeInfo::StackMapTable { .. }))
+    );
+}
+
+#[test]
+fn every_truncated_prefix_fails_without_panicking() {
+    let bytes = build_test_class();
+    for end in 0..bytes.len() {
+        assert!(
+            ClassFile::parse(&bytes[..end]).is_err(),
+            "truncated class unexpectedly parsed at byte {end}"
+        );
+    }
+}
+
+#[test]
+fn deterministic_mutation_corpus_never_panics_or_escapes_budgets() {
+    let original = build_test_class();
+    let limits = ClassFileParseLimits::new()
+        .with_max_input_bytes(original.len() * 2)
+        .with_max_allocation_bytes(4 * 1024 * 1024)
+        .with_max_attribute_nesting(32)
+        .with_max_annotation_nesting(64);
+
+    for index in 0..original.len() {
+        for replacement in [0, 0xff, original[index] ^ 0x80] {
+            let mut candidate = original.clone();
+            candidate[index] = replacement;
+            let _ = ClassFile::parse_with_limits(&candidate, limits);
+        }
+    }
+
+    let mut state = 0x9e37_79b9_7f4a_7c15_u64;
+    for length in 0..=1024 {
+        let mut candidate = vec![0_u8; length];
+        for byte in &mut candidate {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            *byte = state as u8;
+        }
+        if candidate.len() >= 4 {
+            candidate[..4].copy_from_slice(&0xcafe_babe_u32.to_be_bytes());
+        }
+        let _ = ClassFile::parse_with_limits(&candidate, limits);
+    }
+}
+
+#[test]
+fn trailing_bytes_are_rejected() {
+    let mut bytes = build_test_class();
+    bytes.extend_from_slice(&[0xde, 0xad, 0xbe, 0xef]);
+    assert!(ClassFile::parse(&bytes).is_err());
+}
+
+#[test]
+fn constant_utf8_uses_java_modified_utf8() {
+    let expected = "embedded\0nul and supplementary \u{1f680}";
+    let (bytes, index) = build_minimal_class_with_extra_utf8(&mutf8::encode(expected));
+    let class = ClassFile::parse(&bytes).unwrap();
+    assert_eq!(class.constant_pool.get_utf8(index).unwrap(), expected);
+}
+
+#[test]
+fn malformed_constant_modified_utf8_is_rejected() {
+    let (bytes, _) = build_minimal_class_with_extra_utf8(&[0xf0, 0x90, 0x80, 0x80]);
+    assert!(matches!(
+        ClassFile::parse(&bytes),
+        Err(ClassFileError::InvalidUtf8)
+    ));
+}
+
+#[test]
+fn valid_unpaired_java_surrogate_is_preserved_exactly() {
+    let exact = [0xd800, b'A' as u16, 0xdc00];
+    let (bytes, index) = build_minimal_class_with_extra_utf8(&mutf8::encode_utf16(&exact));
+    let class = ClassFile::parse(&bytes).unwrap();
+    let value = class.constant_pool.get_java_string(index).unwrap();
+    assert_eq!(value.to_utf16().as_ref(), exact);
+    assert_eq!(value.to_modified_utf8(), mutf8::encode_utf16(&exact));
+    assert!(matches!(
+        class.constant_pool.get_utf8(index),
+        Err(ClassFileError::UnpairedSurrogate)
+    ));
 }

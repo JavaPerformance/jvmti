@@ -1,0 +1,8 @@
+[package]
+name = "embedded_jvm_consumer"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+
+[dependencies]
+jvmti-bindings = { version = "3", features = ["embed"] }

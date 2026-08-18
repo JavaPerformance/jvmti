@@ -9,15 +9,18 @@ use jvmti_bindings::prelude::*;
 struct AttachLogger;
 
 impl Agent for AttachLogger {
-    fn on_load(&self, _vm: *mut jni::JavaVM, _options: &str) -> jni::jint {
+    fn on_load(&self, _context: AgentLoadContext<'_>) -> jni::jint {
         jni::JNI_OK
     }
 
-    fn on_attach(&self, vm: *mut jni::JavaVM, options: &str) -> jni::jint {
-        println!("[AttachLogger] attached with options: {}", options);
+    fn on_attach(&self, context: AgentLoadContext<'_>) -> jni::jint {
+        println!(
+            "[AttachLogger] attached with options: {}",
+            context.options_lossy().as_deref().unwrap_or("")
+        );
 
         // You can obtain JVMTI on attach and enable events if needed.
-        if let Ok(_jvmti) = Jvmti::new(vm) {
+        if let Ok(_jvmti) = context.vm().jvmti() {
             // Configure JVMTI here if desired.
         }
 

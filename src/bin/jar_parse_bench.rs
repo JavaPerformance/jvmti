@@ -1,54 +1,172 @@
 use std::env;
-use std::fs::File;
-use std::io::Read;
-use std::time::Instant;
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use zip::ZipArchive;
+struct PreparedInput {
+    root: PathBuf,
+    temporary: bool,
+    extraction_time: Duration,
+}
+
+impl PreparedInput {
+    fn prepare(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
+        if path.is_dir() {
+            return Ok(Self {
+                root: path.to_path_buf(),
+                temporary: false,
+                extraction_time: Duration::ZERO,
+            });
+        }
+
+        let archive = path.canonicalize()?;
+        let root = unique_temp_dir();
+        fs::create_dir_all(&root)?;
+        let start = Instant::now();
+        let result = Command::new(jar_command())
+            .current_dir(&root)
+            .arg("xf")
+            .arg(&archive)
+            .status();
+        let extraction_time = start.elapsed();
+
+        match result {
+            Ok(status) if status.success() => Ok(Self {
+                root,
+                temporary: true,
+                extraction_time,
+            }),
+            Ok(status) => {
+                let _ = fs::remove_dir_all(&root);
+                Err(format!("jar extraction failed with status {status}").into())
+            }
+            Err(error) => {
+                let _ = fs::remove_dir_all(&root);
+                Err(format!("failed to execute the JDK jar tool: {error}").into())
+            }
+        }
+    }
+}
+
+impl Drop for PreparedInput {
+    fn drop(&mut self) {
+        if self.temporary {
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+}
+
+fn jar_command() -> PathBuf {
+    if let Some(java_home) = env::var_os("JAVA_HOME") {
+        let executable = if cfg!(windows) { "jar.exe" } else { "jar" };
+        let candidate = PathBuf::from(java_home).join("bin").join(executable);
+        if candidate.exists() {
+            return candidate;
+        }
+    }
+    PathBuf::from(if cfg!(windows) { "jar.exe" } else { "jar" })
+}
+
+fn unique_temp_dir() -> PathBuf {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let root = env::var_os("JVMTI_BENCH_SCRATCH")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            env::current_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join("target")
+                .join("jvmti-bench-scratch")
+        });
+    root.join(format!("jvmti-jar-bench-{}-{nonce}", std::process::id()))
+}
+
+fn class_files(root: &Path) -> Result<Vec<PathBuf>, std::io::Error> {
+    let mut pending = vec![root.to_path_buf()];
+    let mut classes = Vec::new();
+    while let Some(path) = pending.pop() {
+        for entry in fs::read_dir(path)? {
+            let entry = entry?;
+            let file_type = entry.file_type()?;
+            if file_type.is_dir() {
+                pending.push(entry.path());
+            } else if file_type.is_file()
+                && entry.path().extension().is_some_and(|ext| ext == "class")
+            {
+                classes.push(entry.path());
+            }
+        }
+    }
+    classes.sort_unstable();
+    Ok(classes)
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let jar_path = env::args().nth(1).expect("usage: jar_parse_bench JAR_PATH");
-    let file = File::open(&jar_path)?;
-    let mut zip = ZipArchive::new(file)?;
+    let input = env::args().nth(1).ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "usage: jar_parse_bench JAR_JMOD_OR_CLASS_DIRECTORY",
+        )
+    })?;
+    let prepared = PreparedInput::prepare(Path::new(&input))?;
+    let classes = class_files(&prepared.root)?;
 
     let mut total_bytes: u64 = 0;
     let mut parsed: u64 = 0;
     let mut failed: u64 = 0;
-    let mut class_files: u64 = 0;
-
+    let mut failures = Vec::new();
     let start = Instant::now();
-    for i in 0..zip.len() {
-        let mut entry = zip.by_index(i)?;
-        let name = entry.name();
-        if !name.ends_with(".class") {
-            continue;
-        }
-        class_files += 1;
-        let mut bytes = Vec::with_capacity(entry.size() as usize);
-        entry.read_to_end(&mut bytes)?;
+    for path in &classes {
+        let bytes = fs::read(path)?;
         total_bytes += bytes.len() as u64;
         match jvmti_bindings::classfile::ClassFile::parse(&bytes) {
             Ok(_) => parsed += 1,
-            Err(_) => failed += 1,
+            Err(error) => {
+                failed += 1;
+                if failures.len() < 10 {
+                    failures.push(format!("{}: {error}", path.display()));
+                }
+            }
         }
     }
-    let dur = start.elapsed();
+    let parse_time = start.elapsed();
+    let total_time = prepared.extraction_time + parse_time;
 
-    let secs = dur.as_secs_f64();
-    let mb = total_bytes as f64 / (1024.0 * 1024.0);
-    let ns_per = if parsed > 0 {
-        (dur.as_nanos() as f64) / (parsed as f64)
+    let parse_seconds = parse_time.as_secs_f64();
+    let megabytes = total_bytes as f64 / (1024.0 * 1024.0);
+    let ns_per_class = if parsed > 0 {
+        parse_time.as_nanos() as f64 / parsed as f64
     } else {
         0.0
     };
-    let mb_per_s = if secs > 0.0 { mb / secs } else { 0.0 };
+    let mb_per_second = if parse_seconds > 0.0 {
+        megabytes / parse_seconds
+    } else {
+        0.0
+    };
 
-    println!("jar_path={}", jar_path);
-    println!("class_files={}", class_files);
-    println!("parsed_ok={} failed={}", parsed, failed);
-    println!("total_mb={:.3}", mb);
-    println!("parse_time_ms={:.3}", secs * 1000.0);
-    println!("ns_per_class={:.1}", ns_per);
-    println!("mb_per_s={:.2}", mb_per_s);
+    println!("input={input}");
+    println!("class_files={}", classes.len());
+    println!("parsed_ok={parsed} failed={failed}");
+    println!("total_mb={megabytes:.3}");
+    println!(
+        "extract_time_ms={:.3}",
+        prepared.extraction_time.as_secs_f64() * 1_000.0
+    );
+    println!("parse_time_ms={:.3}", parse_seconds * 1_000.0);
+    println!("total_time_ms={:.3}", total_time.as_secs_f64() * 1_000.0);
+    println!("ns_per_class={ns_per_class:.1}");
+    println!("parse_mb_per_s={mb_per_second:.2}");
+
+    if failed != 0 {
+        for failure in failures {
+            eprintln!("parse_failure={failure}");
+        }
+        return Err(format!("failed to parse {failed} of {} class files", classes.len()).into());
+    }
 
     Ok(())
 }

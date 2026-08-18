@@ -1,19 +1,33 @@
+#![deny(unsafe_op_in_unsafe_fn)]
+
 //! # jvmti
 //!
-//! Complete JNI and JVMTI bindings for Rust with **zero dependencies by default**.
+//! Complete JNI and JVMTI bindings for Rust with **zero third-party crate dependencies**.
 //!
 //! This crate provides everything you need to build JVM agents in Rust:
 //! - Low-level FFI bindings to JNI and JVMTI
 //! - High-level wrappers with ergonomic Rust APIs
 //! - The [`Agent`] trait and [`export_agent!`] macro for easy agent creation
 //!
+//! ## Version 3 Migration Notice
+//!
+//! Version 3.0 is intentionally source-breaking from 2.x. Version 2.4.0 was
+//! not published because the planned ABI, callback, ownership, and lifecycle
+//! corrections required a major-version release under semantic versioning.
+//! Existing agents must migrate their callback implementations and review all
+//! affected safety and ownership contracts rather than changing only the Cargo
+//! dependency version. See the complete [2.x to 3.0 migration guide] before
+//! upgrading a production agent.
+//!
+//! [2.x to 3.0 migration guide]: https://github.com/JavaPerformance/jvmti/blob/v3.0.0/docs/MIGRATING_2_TO_3.md
+//!
 //! ## Features
 //!
-//! - **Complete Coverage**: All 236 JNI functions, all 156 JVMTI functions
-//! - **Zero Dependencies By Default**: Optional helpers are feature-gated
+//! - **Complete Coverage**: Complete JDK 28 JNI and JVM TI function tables
+//! - **Zero Third-Party Crates**: Including optional features, tests, tools, and benchmarks
 //! - **Ergonomic API**: High-level wrappers handle strings, arrays, references
 //! - **Type-Safe**: Proper Rust types, `Result` returns, RAII guards
-//! - **JDK 8-27 Compatible**: Verified against JDK 27 headers
+//! - **Release-Aware**: source-ABI verified against pinned OpenJDK 8-28 revisions and live callback-tested through JDK 27
 //!
 //! ## Quick Start
 //!
@@ -30,27 +44,27 @@
 //! crate-type = ["cdylib"]
 //!
 //! [dependencies]
-//! jvmti-bindings = "2"
+//! jvmti-bindings = "3"
 //! ```
 //!
 //! **3. Implement your agent (src/lib.rs):**
-//! ```rust,ignore
+//! ```rust,no_run
 //! use jvmti_bindings::prelude::*;
 //!
 //! #[derive(Default)]
 //! struct MyAgent;
 //!
 //! impl Agent for MyAgent {
-//!     fn on_load(&self, vm: *mut jni::JavaVM, options: &str) -> jni::jint {
-//!         println!("[MyAgent] Loaded with options: {}", options);
+//!     fn on_load(&self, context: AgentLoadContext<'_>) -> jni::jint {
+//!         println!("[MyAgent] Loaded with options: {:?}", context.options_lossy());
 //!         jni::JNI_OK
 //!     }
 //!
-//!     fn vm_init(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread) {
+//!     fn vm_init(&self, _context: CallbackContext<'_>, _event: ThreadEvent) {
 //!         println!("[MyAgent] VM initialized!");
 //!     }
 //!
-//!     fn vm_death(&self, _jni: *mut jni::JNIEnv) {
+//!     fn vm_death(&self, _context: CallbackContext<'_>) {
 //!         println!("[MyAgent] VM shutting down");
 //!     }
 //! }
@@ -79,10 +93,10 @@
 //! │              High-Level Wrappers (env module)            │
 //! │   env::Jvmti - JVMTI operations with Result returns      │
 //! │   env::JniEnv - JNI operations with string helpers       │
-//! │   env::LocalRef, GlobalRef - RAII reference guards       │
+//! │   env::LocalRef, GlobalRef, WeakGlobalRef - RAII guards  │
 //! ├─────────────────────────────────────────────────────────┤
 //! │              Raw FFI Bindings (sys module)               │
-//! │   sys::jni - JNI types, vtable (236 functions)           │
+//! │   sys::jni - JNI types, JDK 28 vtable                    │
 //! │   sys::jvmti - JVMTI types, vtable (156 functions)       │
 //! └─────────────────────────────────────────────────────────┘
 //! ```
@@ -97,6 +111,7 @@
 //! | [`env::Jvmti`] | JVMTI environment wrapper (153 methods) |
 //! | [`env::JniEnv`] | JNI environment wrapper (60+ methods) |
 //! | [`classfile`] | Class file parser with all Java 8-27 attributes |
+//! | [`mutf8`] | Java Modified UTF-8 and exact UTF-16 conversions |
 //! | [`prelude`] | Recommended imports for agents |
 //! | [`embed`] | Optional JVM embedding helpers (`embed` feature) |
 //! | [`advanced`] | Feature-gated advanced helpers (heap graph utilities) |
@@ -108,36 +123,48 @@
 //! 2. Set up event callbacks
 //! 3. Enable the specific events
 //!
-//! ```rust,ignore
+//! ```rust,no_run
 //! use jvmti_bindings::prelude::*;
 //!
 //! #[derive(Default)]
 //! struct ClassMonitor;
 //!
 //! impl Agent for ClassMonitor {
-//!     fn on_load(&self, vm: *mut jni::JavaVM, _options: &str) -> jni::jint {
-//!         let jvmti_env = Jvmti::new(vm).expect("Failed to get JVMTI");
+//!     fn on_load(&self, context: AgentLoadContext<'_>) -> jni::jint {
+//!         let Ok(jvmti_env) = context.vm().jvmti() else {
+//!             return jni::JNI_ERR;
+//!         };
 //!
 //!         // 1. Request capabilities
 //!         let mut caps = jvmti::jvmtiCapabilities::default();
 //!         caps.set_can_generate_all_class_hook_events(true);
-//!         jvmti_env.add_capabilities(&caps).expect("capabilities");
+//!         if jvmti_env.add_capabilities(&caps).is_err() {
+//!             return jni::JNI_ERR;
+//!         }
 //!
 //!         // 2. Set up callbacks (wires all events to your Agent impl)
 //!         let callbacks = get_default_callbacks();
-//!         jvmti_env.set_event_callbacks(callbacks).expect("callbacks");
+//!         if jvmti_env.set_event_callbacks(callbacks).is_err() {
+//!             return jni::JNI_ERR;
+//!         }
 //!
 //!         // 3. Enable specific events
-//!         jvmti_env.set_event_notification_mode(
+//!         if unsafe { jvmti_env.set_event_notification_mode(
 //!             true,  // enable
 //!             jvmti::JVMTI_EVENT_CLASS_FILE_LOAD_HOOK,
 //!             std::ptr::null_mut()  // all threads
-//!         ).expect("enable event");
+//!         ) }.is_err() {
+//!             return jni::JNI_ERR;
+//!         }
 //!
 //!         jni::JNI_OK
 //!     }
 //!
-//!     fn class_file_load_hook(&self, _jni: *mut jni::JNIEnv, /* ... */) {
+//!     fn class_file_load_hook(
+//!         &self,
+//!         _context: CallbackContext<'_>,
+//!         _event: ClassFileLoadHookEvent<'_>,
+//!     ) {
 //!         // Called for every class load!
 //!     }
 //! }
@@ -149,26 +176,39 @@
 //!
 //! Use [`env::JniEnv`] for ergonomic JNI operations:
 //!
-//! ```rust,ignore
+//! ```rust,no_run
 //! use jvmti_bindings::prelude::*;
 //!
-//! fn vm_init(&self, jni_ptr: *mut jni::JNIEnv, _thread: jni::jthread) {
-//!     let jni = unsafe { JniEnv::from_raw(jni_ptr) };
+//! fn print_message(jni: &JniEnv) {
 //!
 //!     // Find a class
-//!     let system_class = jni.find_class("java/lang/System").unwrap();
+//!     let Some(system_class) = jni.find_class("java/lang/System") else {
+//!         return;
+//!     };
 //!
 //!     // Get a static field
-//!     let out_field = jni.get_static_field_id(system_class, "out", "Ljava/io/PrintStream;").unwrap();
-//!     let out = jni.get_static_object_field(system_class, out_field);
+//!     let Some(out_field) = (unsafe {
+//!         jni.get_static_field_id(system_class, "out", "Ljava/io/PrintStream;")
+//!     }) else {
+//!         return;
+//!     };
+//!     let out = unsafe { jni.get_static_object_field(system_class, out_field) };
 //!
 //!     // Create a Java string
-//!     let message = jni.new_string_utf("Hello from Rust!").unwrap();
+//!     let Some(message) = jni.new_string_utf("Hello from Rust!") else {
+//!         return;
+//!     };
 //!
 //!     // Call a method
-//!     let print_class = jni.find_class("java/io/PrintStream").unwrap();
-//!     let println_method = jni.get_method_id(print_class, "println", "(Ljava/lang/String;)V").unwrap();
-//!     jni.call_void_method(out, println_method, &[jni::jvalue { l: message }]);
+//!     let Some(print_class) = jni.find_class("java/io/PrintStream") else {
+//!         return;
+//!     };
+//!     let Some(println_method) = (unsafe {
+//!         jni.get_method_id(print_class, "println", "(Ljava/lang/String;)V")
+//!     }) else {
+//!         return;
+//!     };
+//!     unsafe { jni.call_void_method(out, println_method, &[jni::jvalue { l: message }]) };
 //!
 //!     // Check for exceptions
 //!     if jni.exception_check() {
@@ -189,24 +229,30 @@
 //! | 24/25       | 235           | 156             | +GetStringUTFLengthAsLong |
 //! | 27          | 235           | 156             | +ClearAllFramePops (slot 67) |
 
-pub mod sys;
-pub mod env;
-pub mod classfile;
-pub mod prelude;
-#[cfg(feature = "embed")]
-pub mod embed;
 #[cfg(feature = "advanced")]
 pub mod advanced;
+pub mod agent;
+pub mod callbacks;
+pub mod classfile;
+#[cfg(feature = "embed")]
+mod dynamic_library;
+#[cfg(feature = "embed")]
+pub mod embed;
+pub mod env;
+pub mod mutf8;
+pub mod prelude;
+pub mod sys;
+pub mod version;
 
 // Implementation modules (use `env` module for the public API)
 #[doc(hidden)]
-pub(crate) mod jvmti_wrapper;
-#[doc(hidden)]
 pub(crate) mod jni_wrapper;
+#[doc(hidden)]
+pub(crate) mod jvmti_wrapper;
 
+pub use crate::sys::jni;
+use crate::sys::jvmti;
 use std::sync::OnceLock;
-pub use crate::sys::jni as jni;
-use crate::sys::jvmti as jvmti;
 
 /// Return a display-ready JNI result string, e.g. `JNI_EDETACHED (-2)`.
 ///
@@ -228,7 +274,7 @@ pub fn describe_jni_result(code: jni::jint) -> String {
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// ```rust,no_run
 /// use jvmti_bindings::prelude::*;
 ///
 /// #[derive(Default)]
@@ -237,12 +283,12 @@ pub fn describe_jni_result(code: jni::jint) -> String {
 /// }
 ///
 /// impl Agent for MyProfiler {
-///     fn on_load(&self, vm: *mut jni::JavaVM, options: &str) -> jni::jint {
+///     fn on_load(&self, _context: AgentLoadContext<'_>) -> jni::jint {
 ///         println!("Profiler loaded!");
 ///         jni::JNI_OK
 ///     }
 ///
-///     fn method_entry(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread, _method: jni::jmethodID) {
+///     fn method_entry(&self, _context: CallbackContext<'_>, _event: MethodEvent) {
 ///         self.method_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 ///     }
 /// }
@@ -256,606 +302,830 @@ pub fn describe_jni_result(code: jni::jint) -> String {
 /// [`env::Jvmti::add_capabilities`] in your `on_load` to request them.
 pub trait Agent: Sync + Send {
     /// Called when the agent is loaded into the JVM.
-    ///
-    /// This is your initialization point. Use it to:
-    /// - Parse agent options
-    /// - Request JVMTI capabilities
-    /// - Set up event callbacks
-    /// - Initialize your agent's state
-    ///
-    /// Return `JNI_OK` (0) on success, or `JNI_ERR` (-1) on failure.
-    fn on_load(&self, vm: *mut jni::JavaVM, options: &str) -> jni::jint;
+    fn on_load(&self, context: agent::AgentLoadContext<'_>) -> jni::jint;
 
-    /// Called when the agent is attached to a running JVM (dynamic attach).
-    ///
-    /// Default implementation returns `JNI_OK`.
-    fn on_attach(&self, _vm: *mut jni::JavaVM, _options: &str) -> jni::jint {
+    /// Called when the agent is attached to a running JVM.
+    fn on_attach(&self, _context: agent::AgentLoadContext<'_>) -> jni::jint {
         jni::JNI_OK
     }
 
-    /// Called when the agent is unloaded (JVM shutdown).
+    /// Called when the agent is unloaded.
+    fn on_unload(&self, _context: agent::AgentUnloadContext<'_>) {}
+
+    /// Called after an agent callback panics and the unwind has been contained.
     ///
-    /// Use this for cleanup: flush buffers, close files, etc.
-    fn on_unload(&self) {}
+    /// This hook must not panic. The default deliberately performs no I/O
+    /// because several JVMTI callback phases have severe operation limits.
+    fn callback_panicked(&self, _event: &'static str) {}
 
-    // =========================================================================
-    // VM LIFECYCLE EVENTS
-    // =========================================================================
+    fn vm_init(&self, _context: callbacks::CallbackContext<'_>, _event: callbacks::ThreadEvent) {}
+    fn vm_death(&self, _context: callbacks::CallbackContext<'_>) {}
+    fn vm_start(&self, _context: callbacks::CallbackContext<'_>) {}
 
-    /// Called when the VM initialization is complete.
-    ///
-    /// At this point, JNI is fully functional and you can safely call JNI functions.
-    /// The `thread` parameter is the main thread.
-    fn vm_init(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread) {}
-
-    /// Same as [`Agent::vm_init`], but also exposes the callback's `jvmtiEnv*`.
-    ///
-    /// Prefer this when the callback needs to allocate JVMTI memory, query class
-    /// metadata, tag objects, or preserve the exact environment that owns the
-    /// capabilities requested in `on_load`.
-    fn vm_init_with_jvmti(&self, _jvmti: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread) {
-        self.vm_init(jni, thread);
-    }
-
-    /// Called when the VM is about to terminate.
-    ///
-    /// This is your last chance to perform cleanup that requires JNI.
-    fn vm_death(&self, _jni: *mut jni::JNIEnv) {}
-
-    /// Same as [`Agent::vm_death`], but also exposes the callback's `jvmtiEnv*`.
-    fn vm_death_with_jvmti(&self, _jvmti: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv) {
-        self.vm_death(jni);
-    }
-
-    /// Called when the VM starts (before `vm_init`).
-    ///
-    /// JNI is available but limited - you cannot create new threads or load classes.
-    /// Requires `can_generate_early_vmstart` capability for early delivery.
-    fn vm_start(&self, _jni: *mut jni::JNIEnv) {}
-
-    /// Same as [`Agent::vm_start`], but also exposes the callback's `jvmtiEnv*`.
-    fn vm_start_with_jvmti(&self, _jvmti: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv) {
-        self.vm_start(jni);
-    }
-
-    // =========================================================================
-    // THREAD EVENTS
-    // =========================================================================
-
-    /// Called when a new thread starts.
-    ///
-    /// Fired for every thread including the main thread.
-    fn thread_start(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread) {}
-
-    /// Called when a thread is about to terminate.
-    fn thread_end(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread) {}
-
-    /// Called when a virtual thread starts (JDK 21+).
-    ///
-    /// Requires the `can_support_virtual_threads` capability. This event does
-    /// not exist on older JVMs and must only be enabled when the running JVMTI
-    /// version supports it.
-    fn virtual_thread_start(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread) {}
-
-    /// Called when a virtual thread terminates (JDK 21+).
-    ///
-    /// Requires the `can_support_virtual_threads` capability.
-    fn virtual_thread_end(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread) {}
-
-    // =========================================================================
-    // CLASS EVENTS
-    // =========================================================================
-
-    /// Called when a class is first loaded (before linking).
-    ///
-    /// The class is not yet usable at this point.
-    fn class_load(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread, _klass: jni::jclass) {}
-
-    /// Same as [`Agent::class_load`], but also exposes the callback's `jvmtiEnv*`.
-    fn class_load_with_jvmti(&self, _jvmti: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread, klass: jni::jclass) {
-        self.class_load(jni, thread, klass);
-    }
-
-    /// Called when a class is prepared (linked and ready to use).
-    ///
-    /// At this point you can query the class's methods and fields.
-    fn class_prepare(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread, _klass: jni::jclass) {}
-
-    /// Same as [`Agent::class_prepare`], but also exposes the callback's `jvmtiEnv*`.
-    fn class_prepare_with_jvmti(&self, _jvmti: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread, klass: jni::jclass) {
-        self.class_prepare(jni, thread, klass);
-    }
-
-    /// Called when class bytecode is being loaded or redefined.
-    ///
-    /// This is your hook for bytecode instrumentation (BCI). To modify the class:
-    /// 1. Allocate memory with `Jvmti::allocate()`
-    /// 2. Write your modified bytecode to it
-    /// 3. Set `new_class_data_len` and `new_class_data`
-    ///
-    /// Requires `can_generate_all_class_hook_events` or `can_retransform_classes`.
-    fn class_file_load_hook(&self, _jni: *mut jni::JNIEnv, _class_being_redefined: jni::jclass,
-                            _loader: jni::jobject, _name: *const std::os::raw::c_char,
-                            _protection_domain: jni::jobject, _class_data_len: jni::jint,
-                            _class_data: *const std::os::raw::c_uchar,
-                            _new_class_data_len: *mut jni::jint,
-                            _new_class_data: *mut *mut std::os::raw::c_uchar) {}
-
-    /// Same as [`Agent::class_file_load_hook`], but also exposes the callback's
-    /// `jvmtiEnv*`.
-    ///
-    /// This is the preferred entry point for bytecode transformers because
-    /// transformed bytes must be allocated with the same JVMTI environment.
-    #[allow(clippy::too_many_arguments)]
-    fn class_file_load_hook_with_jvmti(&self, _jvmti: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv,
-                                       class_being_redefined: jni::jclass, loader: jni::jobject,
-                                       name: *const std::os::raw::c_char,
-                                       protection_domain: jni::jobject, class_data_len: jni::jint,
-                                       class_data: *const std::os::raw::c_uchar,
-                                       new_class_data_len: *mut jni::jint,
-                                       new_class_data: *mut *mut std::os::raw::c_uchar) {
-        self.class_file_load_hook(jni, class_being_redefined, loader, name, protection_domain, class_data_len, class_data, new_class_data_len, new_class_data);
-    }
-
-    // =========================================================================
-    // METHOD EVENTS
-    // =========================================================================
-
-    /// Called when a method is entered.
-    ///
-    /// **Warning**: This fires for EVERY method call - extremely high overhead.
-    /// Requires `can_generate_method_entry_events` capability.
-    fn method_entry(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread, _method: jni::jmethodID) {}
-
-    /// Same as [`Agent::method_entry`], but also exposes the callback's `jvmtiEnv*`.
-    fn method_entry_with_jvmti(&self, _jvmti: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread, method: jni::jmethodID) {
-        self.method_entry(jni, thread, method);
-    }
-
-    /// Called when a method is about to return.
-    ///
-    /// **Warning**: This fires for EVERY method return - extremely high overhead.
-    /// Requires `can_generate_method_exit_events` capability.
-    fn method_exit(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread, _method: jni::jmethodID) {}
-
-    /// Same as [`Agent::method_exit`], but also exposes the callback's `jvmtiEnv*`.
-    fn method_exit_with_jvmti(&self, _jvmti: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread, method: jni::jmethodID) {
-        self.method_exit(jni, thread, method);
-    }
-
-    /// Called when a native method is bound to its implementation.
-    ///
-    /// You can redirect native methods by setting `*new_address_ptr`.
-    /// Requires `can_generate_native_method_bind_events` capability.
-    fn native_method_bind(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread, _method: jni::jmethodID, _address: *mut std::os::raw::c_void, _new_address_ptr: *mut *mut std::os::raw::c_void) {}
-
-    // =========================================================================
-    // COMPILED CODE EVENTS (JIT)
-    // =========================================================================
-
-    /// Called when a method is JIT-compiled.
-    ///
-    /// Useful for profilers that need to map native code addresses to methods.
-    /// Requires `can_generate_compiled_method_load_events` capability.
-    fn compiled_method_load(&self, _method: jni::jmethodID, _code_size: jni::jint, _code_addr: *const std::os::raw::c_void, _map_length: jni::jint, _map: *const std::os::raw::c_void, _compile_info: *const std::os::raw::c_void) {}
-
-    /// Same as [`Agent::compiled_method_load`], but also exposes the callback's
-    /// `jvmtiEnv*`.
-    ///
-    /// Use [`env::Jvmti::from_raw`] with this pointer to query the compiled
-    /// method's name, declaring class, line number table, and other metadata.
-    #[allow(clippy::too_many_arguments)]
-    fn compiled_method_load_with_jvmti(
+    fn thread_start(
         &self,
-        _jvmti: *mut jvmti::jvmtiEnv,
-        method: jni::jmethodID,
-        code_size: jni::jint,
-        code_addr: *const std::os::raw::c_void,
-        map_length: jni::jint,
-        map: *const std::os::raw::c_void,
-        compile_info: *const std::os::raw::c_void,
+        _context: callbacks::CallbackContext<'_>,
+        _event: callbacks::ThreadEvent,
     ) {
-        self.compiled_method_load(
-            method,
-            code_size,
-            code_addr,
-            map_length,
-            map,
-            compile_info,
-        );
     }
-
-    /// Called when JIT-compiled code is unloaded (deoptimized).
-    fn compiled_method_unload(&self, _method: jni::jmethodID, _code_addr: *const std::os::raw::c_void) {}
-
-    /// Same as [`Agent::compiled_method_unload`], but also exposes the
-    /// callback's `jvmtiEnv*`.
-    fn compiled_method_unload_with_jvmti(
+    fn thread_end(&self, _context: callbacks::CallbackContext<'_>, _event: callbacks::ThreadEvent) {
+    }
+    fn virtual_thread_start(
         &self,
-        _jvmti: *mut jvmti::jvmtiEnv,
-        method: jni::jmethodID,
-        code_addr: *const std::os::raw::c_void,
+        _context: callbacks::CallbackContext<'_>,
+        _event: callbacks::ThreadEvent,
     ) {
-        self.compiled_method_unload(method, code_addr);
     }
-
-    /// Called when dynamic code is generated (e.g., JIT stubs).
-    fn dynamic_code_generated(&self, _name: *const std::os::raw::c_char, _address: *const std::os::raw::c_void, _length: jni::jint) {}
-
-    /// Same as [`Agent::dynamic_code_generated`], but also exposes the
-    /// callback's `jvmtiEnv*`.
-    fn dynamic_code_generated_with_jvmti(
+    fn virtual_thread_end(
         &self,
-        _jvmti: *mut jvmti::jvmtiEnv,
-        name: *const std::os::raw::c_char,
-        address: *const std::os::raw::c_void,
-        length: jni::jint,
+        _context: callbacks::CallbackContext<'_>,
+        _event: callbacks::ThreadEvent,
     ) {
-        self.dynamic_code_generated(name, address, length);
     }
 
-    /// Called when the JVM requests that the agent dump diagnostic data.
-    ///
-    /// This event can be generated by a platform-specific user signal or by
-    /// [`env::Jvmti::generate_events`]. The callback has no `JNIEnv`; keep it
-    /// bounded and defer expensive work where possible.
-    fn data_dump_request(&self) {}
+    fn class_load(&self, _context: callbacks::CallbackContext<'_>, _event: callbacks::ClassEvent) {}
+    fn class_prepare(
+        &self,
+        _context: callbacks::CallbackContext<'_>,
+        _event: callbacks::ClassEvent,
+    ) {
+    }
+    fn class_file_load_hook<'callback>(
+        &self,
+        _context: callbacks::CallbackContext<'callback>,
+        _event: callbacks::ClassFileLoadHookEvent<'callback>,
+    ) {
+    }
 
-    // =========================================================================
-    // EXCEPTION EVENTS
-    // =========================================================================
+    fn method_entry(
+        &self,
+        _context: callbacks::CallbackContext<'_>,
+        _event: callbacks::MethodEvent,
+    ) {
+    }
+    fn method_exit(
+        &self,
+        _context: callbacks::CallbackContext<'_>,
+        _event: callbacks::MethodExitEvent,
+    ) {
+    }
+    fn native_method_bind(
+        &self,
+        _context: callbacks::CallbackContext<'_>,
+        _event: callbacks::NativeMethodBindEvent,
+    ) {
+    }
 
-    /// Called when an exception is thrown.
-    ///
-    /// `catch_method` and `catch_location` indicate where it will be caught,
-    /// or are null/0 if uncaught. Requires `can_generate_exception_events`.
-    fn exception(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread, _method: jni::jmethodID,
-                 _location: jvmti::jlocation, _exception: jni::jobject,
-                 _catch_method: jni::jmethodID, _catch_location: jvmti::jlocation) {}
+    fn compiled_method_load<'callback>(
+        &self,
+        _context: callbacks::CallbackContext<'callback>,
+        _event: callbacks::CompiledMethodLoadEvent<'callback>,
+    ) {
+    }
+    fn compiled_method_unload(
+        &self,
+        _context: callbacks::CallbackContext<'_>,
+        _event: callbacks::CompiledMethodUnloadEvent,
+    ) {
+    }
+    fn dynamic_code_generated<'callback>(
+        &self,
+        _context: callbacks::CallbackContext<'callback>,
+        _event: callbacks::DynamicCodeGeneratedEvent<'callback>,
+    ) {
+    }
+    fn data_dump_request(&self, _context: callbacks::CallbackContext<'_>) {}
 
-    /// Called when an exception is caught.
-    fn exception_catch(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread, _method: jni::jmethodID,
-                       _location: jvmti::jlocation, _exception: jni::jobject) {}
+    fn exception(
+        &self,
+        _context: callbacks::CallbackContext<'_>,
+        _event: callbacks::ExceptionEvent,
+    ) {
+    }
+    fn exception_catch(
+        &self,
+        _context: callbacks::CallbackContext<'_>,
+        _event: callbacks::ExceptionCatchEvent,
+    ) {
+    }
+    fn single_step(
+        &self,
+        _context: callbacks::CallbackContext<'_>,
+        _event: callbacks::LocationEvent,
+    ) {
+    }
+    fn breakpoint(
+        &self,
+        _context: callbacks::CallbackContext<'_>,
+        _event: callbacks::LocationEvent,
+    ) {
+    }
+    fn frame_pop(
+        &self,
+        _context: callbacks::CallbackContext<'_>,
+        _event: callbacks::FramePopEvent,
+    ) {
+    }
 
-    // =========================================================================
-    // DEBUGGING EVENTS
-    // =========================================================================
+    fn monitor_wait(
+        &self,
+        _context: callbacks::CallbackContext<'_>,
+        _event: callbacks::MonitorWaitEvent,
+    ) {
+    }
+    fn monitor_waited(
+        &self,
+        _context: callbacks::CallbackContext<'_>,
+        _event: callbacks::MonitorWaitedEvent,
+    ) {
+    }
+    fn monitor_contended_enter(
+        &self,
+        _context: callbacks::CallbackContext<'_>,
+        _event: callbacks::MonitorEvent,
+    ) {
+    }
+    fn monitor_contended_entered(
+        &self,
+        _context: callbacks::CallbackContext<'_>,
+        _event: callbacks::MonitorEvent,
+    ) {
+    }
 
-    /// Called before each bytecode instruction (single-stepping).
-    ///
-    /// **Extreme overhead** - only use for debugging.
-    /// Requires `can_generate_single_step_events` capability.
-    fn single_step(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread, _method: jni::jmethodID, _location: jvmti::jlocation) {}
+    fn field_access(
+        &self,
+        _context: callbacks::CallbackContext<'_>,
+        _event: callbacks::FieldAccessEvent,
+    ) {
+    }
+    fn field_modification(
+        &self,
+        _context: callbacks::CallbackContext<'_>,
+        _event: callbacks::FieldModificationEvent,
+    ) {
+    }
 
-    /// Called when a breakpoint is hit.
-    ///
-    /// Requires `can_generate_breakpoint_events` capability.
-    fn breakpoint(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread, _method: jni::jmethodID, _location: jvmti::jlocation) {}
+    /// No JNI environment is available and only GC-safe JVMTI operations may be used.
+    fn garbage_collection_start(&self, _context: callbacks::CallbackContext<'_>) {}
+    /// No JNI environment is available and only GC-safe JVMTI operations may be used.
+    fn garbage_collection_finish(&self, _context: callbacks::CallbackContext<'_>) {}
+    fn resource_exhausted<'callback>(
+        &self,
+        _context: callbacks::CallbackContext<'callback>,
+        _event: callbacks::ResourceExhaustedEvent<'callback>,
+    ) {
+    }
 
-    /// Called when a frame is popped (method returns or exception thrown).
-    ///
-    /// Must be registered per-frame with `notify_frame_pop`.
-    /// Requires `can_generate_frame_pop_events` capability.
-    fn frame_pop(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread, _method: jni::jmethodID, _was_popped_by_exception: jni::jboolean) {}
-
-    // =========================================================================
-    // MONITOR EVENTS
-    // =========================================================================
-
-    /// Called when a thread is about to wait on a monitor (`Object.wait()`).
-    ///
-    /// Requires `can_generate_monitor_events` capability.
-    fn monitor_wait(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread, _object: jni::jobject, _timeout: jni::jlong) {}
-
-    /// Called when a thread finishes waiting on a monitor.
-    ///
-    /// `timed_out` indicates if the wait timed out.
-    fn monitor_waited(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread, _object: jni::jobject, _timed_out: jni::jboolean) {}
-
-    /// Called when a thread is about to block on a contended monitor.
-    fn monitor_contended_enter(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread, _object: jni::jobject) {}
-
-    /// Called when a thread acquires a previously contended monitor.
-    fn monitor_contended_entered(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread, _object: jni::jobject) {}
-
-    // =========================================================================
-    // FIELD EVENTS (WATCHPOINTS)
-    // =========================================================================
-
-    /// Called when a watched field is read.
-    ///
-    /// Set up with `set_field_access_watch`. Requires `can_generate_field_access_events`.
-    fn field_access(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread, _method: jni::jmethodID,
-                    _location: jvmti::jlocation, _field_klass: jni::jclass, _object: jni::jobject, _field: jni::jfieldID) {}
-
-    /// Called when a watched field is modified.
-    ///
-    /// Set up with `set_field_modification_watch`. Requires `can_generate_field_modification_events`.
-    fn field_modification(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread, _method: jni::jmethodID,
-                          _location: jvmti::jlocation, _field_klass: jni::jclass, _object: jni::jobject,
-                          _field: jni::jfieldID, _sig_type: std::os::raw::c_char, _new_value: jni::jvalue) {}
-
-    // =========================================================================
-    // GC & MEMORY EVENTS
-    // =========================================================================
-
-    /// Called when garbage collection starts.
-    ///
-    /// **No JNI calls allowed** during this callback.
-    /// Requires `can_generate_garbage_collection_events` capability.
-    fn garbage_collection_start(&self) {}
-
-    /// Called when garbage collection finishes.
-    ///
-    /// **No JNI calls allowed** during this callback.
-    fn garbage_collection_finish(&self) {}
-
-    /// Called when a critical resource is exhausted (heap, threads, etc.).
-    fn resource_exhausted(&self, _jni: *mut jni::JNIEnv, _flags: jni::jint, _description: *const std::os::raw::c_char) {}
-
-    // =========================================================================
-    // OBJECT EVENTS
-    // =========================================================================
-
-    /// Called when a tagged object is garbage collected.
-    ///
-    /// Use `set_tag` to tag objects you want to track.
-    /// Requires `can_generate_object_free_events` capability.
-    fn object_free(&self, _tag: jni::jlong) {}
-
-    /// Called when an object is allocated (VM-internal allocations).
-    ///
-    /// Does NOT fire for all allocations - use sampling for comprehensive coverage.
-    /// Requires `can_generate_vm_object_alloc_events` capability.
-    fn vm_object_alloc(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread, _object: jni::jobject, _klass: jni::jclass, _size: jni::jlong) {}
-
-    /// Called for sampled object allocations (JDK 11+).
-    ///
-    /// Configure sampling rate with `set_heap_sampling_interval`.
-    /// Requires `can_generate_sampled_object_alloc_events` capability.
-    fn sampled_object_alloc(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread, _object: jni::jobject, _klass: jni::jclass, _size: jni::jlong) {}
+    /// No JNI environment is available and only object-free-safe JVMTI operations may be used.
+    fn object_free(
+        &self,
+        _context: callbacks::CallbackContext<'_>,
+        _event: callbacks::ObjectFreeEvent,
+    ) {
+    }
+    fn vm_object_alloc(
+        &self,
+        _context: callbacks::CallbackContext<'_>,
+        _event: callbacks::ObjectAllocationEvent,
+    ) {
+    }
+    fn sampled_object_alloc(
+        &self,
+        _context: callbacks::CallbackContext<'_>,
+        _event: callbacks::ObjectAllocationEvent,
+    ) {
+    }
 }
 
 // 2. THE GLOBAL SINGLETON
 // This holds the user's Agent instance so static C functions can find it.
 pub static GLOBAL_AGENT: OnceLock<Box<dyn Agent>> = OnceLock::new();
 
+/// The process-global agent has already been initialized.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct GlobalAgentAlreadySet;
+
+impl std::fmt::Display for GlobalAgentAlreadySet {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("the process-global JVM TI agent is already initialized")
+    }
+}
+
+impl std::error::Error for GlobalAgentAlreadySet {}
+
 /// Helper to initialize the global agent (called by the macro)
-pub fn set_global_agent(agent: Box<dyn Agent>) -> Result<(), ()> {
-    GLOBAL_AGENT.set(agent).map_err(|_| ())
+pub fn set_global_agent(agent: Box<dyn Agent>) -> Result<(), GlobalAgentAlreadySet> {
+    GLOBAL_AGENT.set(agent).map_err(|_| GlobalAgentAlreadySet)
+}
+
+fn global_agent_or_init<A>() -> &'static dyn Agent
+where
+    A: Agent + Default + 'static,
+{
+    GLOBAL_AGENT.get_or_init(|| Box::new(A::default())).as_ref()
+}
+
+#[doc(hidden)]
+pub unsafe fn __agent_on_load<A>(
+    vm: *mut jni::JavaVM,
+    options: *mut std::ffi::c_char,
+    reserved: *mut std::ffi::c_void,
+) -> jni::jint
+where
+    A: Agent + Default + 'static,
+{
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let context = unsafe { agent::AgentLoadContext::from_raw(vm, options, reserved) }
+            .ok_or(jni::JNI_ERR)?;
+        Ok(global_agent_or_init::<A>().on_load(context))
+    }));
+
+    match outcome {
+        Ok(Ok(result)) => result,
+        Ok(Err(error)) => error,
+        Err(_) => {
+            if let Some(agent) = GLOBAL_AGENT.get() {
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    agent.callback_panicked("Agent_OnLoad")
+                }));
+            }
+            jni::JNI_ERR
+        }
+    }
+}
+
+#[doc(hidden)]
+pub unsafe fn __agent_on_attach<A>(
+    vm: *mut jni::JavaVM,
+    options: *mut std::ffi::c_char,
+    reserved: *mut std::ffi::c_void,
+) -> jni::jint
+where
+    A: Agent + Default + 'static,
+{
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let context = unsafe { agent::AgentLoadContext::from_raw(vm, options, reserved) }
+            .ok_or(jni::JNI_ERR)?;
+        // The Attach API invokes Agent_OnAttach even when this library was
+        // already loaded. Reuse the process-global agent rather than rejecting
+        // every attach after the first one.
+        Ok(global_agent_or_init::<A>().on_attach(context))
+    }));
+
+    match outcome {
+        Ok(Ok(result)) => result,
+        Ok(Err(error)) => error,
+        Err(_) => {
+            if let Some(agent) = GLOBAL_AGENT.get() {
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    agent.callback_panicked("Agent_OnAttach")
+                }));
+            }
+            jni::JNI_ERR
+        }
+    }
+}
+
+#[doc(hidden)]
+pub unsafe fn __agent_on_unload(vm: *mut jni::JavaVM) {
+    let Some(agent) = GLOBAL_AGENT.get() else {
+        return;
+    };
+    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        if let Some(context) = unsafe { agent::AgentUnloadContext::from_raw(vm) } {
+            agent.on_unload(context);
+        }
+    }));
+    if outcome.is_err() {
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            agent.callback_panicked("Agent_OnUnload")
+        }));
+    }
+}
+
+fn dispatch_agent(event: &'static str, callback: impl FnOnce(&dyn Agent)) {
+    let Some(agent) = GLOBAL_AGENT.get() else {
+        return;
+    };
+    if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| callback(agent.as_ref()))).is_err()
+    {
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            agent.callback_panicked(event)
+        }));
+    }
+}
+
+macro_rules! dispatch_event {
+    ($name:literal, $jvmti:expr, $jni:expr, |$agent:ident, $context:ident| $body:block) => {{
+        dispatch_agent($name, |$agent| {
+            if let Some($context) = unsafe {
+                callbacks::CallbackContext::from_raw($jvmti, $jni)
+            } $body
+        });
+    }};
 }
 
 unsafe extern "system" fn trampoline_method_entry(
-    jvmti_env: *mut sys::jvmti::jvmtiEnv,
+    jvmti_env: *mut jvmti::jvmtiEnv,
     jni_env: *mut jni::JNIEnv,
     thread: jni::jthread,
     method: jni::jmethodID,
 ) {
-    if let Some(agent) = GLOBAL_AGENT.get() {
-        agent.method_entry_with_jvmti(jvmti_env, jni_env, thread, method);
-    }
+    dispatch_event!("MethodEntry", jvmti_env, jni_env, |agent, context| {
+        agent.method_entry(context, callbacks::MethodEvent::new(thread, method));
+    });
 }
 
 unsafe extern "system" fn trampoline_method_exit(
-    jvmti_env: *mut sys::jvmti::jvmtiEnv,
+    jvmti_env: *mut jvmti::jvmtiEnv,
     jni_env: *mut jni::JNIEnv,
     thread: jni::jthread,
     method: jni::jmethodID,
-    _was_popped: jni::jboolean,
-    _ret_val: jni::jvalue,
+    was_popped: jni::jboolean,
+    return_value: jni::jvalue,
 ) {
-    if let Some(agent) = GLOBAL_AGENT.get() {
-        agent.method_exit_with_jvmti(jvmti_env, jni_env, thread, method);
-    }
+    dispatch_event!("MethodExit", jvmti_env, jni_env, |agent, context| {
+        agent.method_exit(
+            context,
+            callbacks::MethodExitEvent::new(thread, method, was_popped, return_value),
+        );
+    });
 }
 
 unsafe extern "system" fn trampoline_native_method_bind(
-    _env: *mut sys::jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread, method: jni::jmethodID,
-    address: *mut std::os::raw::c_void, new_address_ptr: *mut *mut std::os::raw::c_void
+    env: *mut jvmti::jvmtiEnv,
+    jni: *mut jni::JNIEnv,
+    thread: jni::jthread,
+    method: jni::jmethodID,
+    address: *mut std::ffi::c_void,
+    new_address_ptr: *mut *mut std::ffi::c_void,
 ) {
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.native_method_bind(jni, thread, method, address, new_address_ptr); }
+    if !new_address_ptr.is_null() {
+        unsafe { *new_address_ptr = std::ptr::null_mut() };
+    }
+    dispatch_event!("NativeMethodBind", env, jni, |agent, context| {
+        agent.native_method_bind(
+            context,
+            callbacks::NativeMethodBindEvent::new(thread, method, address, new_address_ptr),
+        );
+    });
 }
 
-
-// --- 1. Lifecycle ---
-unsafe extern "system" fn trampoline_vm_init(env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread) {
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.vm_init_with_jvmti(env, jni, thread); }
+unsafe extern "system" fn trampoline_vm_init(
+    env: *mut jvmti::jvmtiEnv,
+    jni: *mut jni::JNIEnv,
+    thread: jni::jthread,
+) {
+    dispatch_event!("VMInit", env, jni, |agent, context| {
+        agent.vm_init(context, callbacks::ThreadEvent::new(thread));
+    });
 }
+
 unsafe extern "system" fn trampoline_vm_death(env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv) {
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.vm_death_with_jvmti(env, jni); }
+    dispatch_event!("VMDeath", env, jni, |agent, context| {
+        agent.vm_death(context);
+    });
 }
+
 unsafe extern "system" fn trampoline_vm_start(env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv) {
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.vm_start_with_jvmti(env, jni); }
+    dispatch_event!("VMStart", env, jni, |agent, context| {
+        agent.vm_start(context);
+    });
 }
 
-// --- 2. Threads ---
-unsafe extern "system" fn trampoline_thread_start(_env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread) {
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.thread_start(jni, thread); }
+unsafe extern "system" fn trampoline_thread_start(
+    env: *mut jvmti::jvmtiEnv,
+    jni: *mut jni::JNIEnv,
+    thread: jni::jthread,
+) {
+    dispatch_event!("ThreadStart", env, jni, |agent, context| {
+        agent.thread_start(context, callbacks::ThreadEvent::new(thread));
+    });
 }
-unsafe extern "system" fn trampoline_thread_end(_env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread) {
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.thread_end(jni, thread); }
+
+unsafe extern "system" fn trampoline_thread_end(
+    env: *mut jvmti::jvmtiEnv,
+    jni: *mut jni::JNIEnv,
+    thread: jni::jthread,
+) {
+    dispatch_event!("ThreadEnd", env, jni, |agent, context| {
+        agent.thread_end(context, callbacks::ThreadEvent::new(thread));
+    });
 }
+
 unsafe extern "system" fn trampoline_virtual_thread_start(
-    _env: *mut jvmti::jvmtiEnv,
+    env: *mut jvmti::jvmtiEnv,
     jni: *mut jni::JNIEnv,
     thread: jni::jthread,
 ) {
-    if let Some(agent) = GLOBAL_AGENT.get() {
-        agent.virtual_thread_start(jni, thread);
-    }
+    dispatch_event!("VirtualThreadStart", env, jni, |agent, context| {
+        agent.virtual_thread_start(context, callbacks::ThreadEvent::new(thread));
+    });
 }
+
 unsafe extern "system" fn trampoline_virtual_thread_end(
-    _env: *mut jvmti::jvmtiEnv,
+    env: *mut jvmti::jvmtiEnv,
     jni: *mut jni::JNIEnv,
     thread: jni::jthread,
 ) {
-    if let Some(agent) = GLOBAL_AGENT.get() {
-        agent.virtual_thread_end(jni, thread);
+    dispatch_event!("VirtualThreadEnd", env, jni, |agent, context| {
+        agent.virtual_thread_end(context, callbacks::ThreadEvent::new(thread));
+    });
+}
+
+unsafe extern "system" fn trampoline_class_load(
+    env: *mut jvmti::jvmtiEnv,
+    jni: *mut jni::JNIEnv,
+    thread: jni::jthread,
+    class: jni::jclass,
+) {
+    dispatch_event!("ClassLoad", env, jni, |agent, context| {
+        agent.class_load(context, callbacks::ClassEvent::new(thread, class));
+    });
+}
+
+unsafe extern "system" fn trampoline_class_prepare(
+    env: *mut jvmti::jvmtiEnv,
+    jni: *mut jni::JNIEnv,
+    thread: jni::jthread,
+    class: jni::jclass,
+) {
+    dispatch_event!("ClassPrepare", env, jni, |agent, context| {
+        agent.class_prepare(context, callbacks::ClassEvent::new(thread, class));
+    });
+}
+
+unsafe extern "system" fn trampoline_class_file_load_hook(
+    env: *mut jvmti::jvmtiEnv,
+    jni: *mut jni::JNIEnv,
+    class_being_redefined: jni::jclass,
+    loader: jni::jobject,
+    name: *const std::ffi::c_char,
+    protection_domain: jni::jobject,
+    class_data_len: jni::jint,
+    class_data: *const u8,
+    new_class_data_len: *mut jni::jint,
+    new_class_data: *mut *mut u8,
+) {
+    if !new_class_data_len.is_null() {
+        unsafe { *new_class_data_len = 0 };
     }
+    if !new_class_data.is_null() {
+        unsafe { *new_class_data = std::ptr::null_mut() };
+    }
+    dispatch_event!("ClassFileLoadHook", env, jni, |agent, context| {
+        agent.class_file_load_hook(
+            context,
+            callbacks::ClassFileLoadHookEvent::new(
+                class_being_redefined,
+                loader,
+                name,
+                protection_domain,
+                class_data_len,
+                class_data,
+                new_class_data_len,
+                new_class_data,
+            ),
+        );
+    });
 }
 
-// --- 3. Classes ---
-unsafe extern "system" fn trampoline_class_load(env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread, klass: jni::jclass) {
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.class_load_with_jvmti(env, jni, thread, klass); }
-}
-unsafe extern "system" fn trampoline_class_prepare(env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread, klass: jni::jclass) {
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.class_prepare_with_jvmti(env, jni, thread, klass); }
-}
-
-// --- 3.5 Compiled Code ---
 unsafe extern "system" fn trampoline_compiled_method_load(
     env: *mut jvmti::jvmtiEnv,
     method: jni::jmethodID,
     code_size: jni::jint,
-    code_addr: *const std::os::raw::c_void,
+    code_addr: *const std::ffi::c_void,
     map_length: jni::jint,
-    map: *const std::os::raw::c_void,
-    compile_info: *const std::os::raw::c_void,
+    map: *const jvmti::jvmtiAddrLocationMap,
+    compile_info: *const std::ffi::c_void,
 ) {
-    if let Some(agent) = GLOBAL_AGENT.get() {
-        agent.compiled_method_load_with_jvmti(
-            env,
-            method,
-            code_size,
-            code_addr,
-            map_length,
-            map,
-            compile_info,
-        );
-    }
+    dispatch_event!(
+        "CompiledMethodLoad",
+        env,
+        std::ptr::null_mut(),
+        |agent, context| {
+            agent.compiled_method_load(
+                context,
+                callbacks::CompiledMethodLoadEvent::new(
+                    method,
+                    code_size,
+                    code_addr,
+                    map_length,
+                    map,
+                    compile_info,
+                ),
+            );
+        }
+    );
 }
+
 unsafe extern "system" fn trampoline_compiled_method_unload(
     env: *mut jvmti::jvmtiEnv,
     method: jni::jmethodID,
-    code_addr: *const std::os::raw::c_void,
+    code_addr: *const std::ffi::c_void,
 ) {
-    if let Some(agent) = GLOBAL_AGENT.get() {
-        agent.compiled_method_unload_with_jvmti(env, method, code_addr);
-    }
+    dispatch_event!(
+        "CompiledMethodUnload",
+        env,
+        std::ptr::null_mut(),
+        |agent, context| {
+            agent.compiled_method_unload(
+                context,
+                callbacks::CompiledMethodUnloadEvent::new(method, code_addr),
+            );
+        }
+    );
 }
+
 unsafe extern "system" fn trampoline_dynamic_code_generated(
     env: *mut jvmti::jvmtiEnv,
-    name: *const std::os::raw::c_char,
-    address: *const std::os::raw::c_void,
+    name: *const std::ffi::c_char,
+    address: *const std::ffi::c_void,
     length: jni::jint,
 ) {
-    if let Some(agent) = GLOBAL_AGENT.get() {
-        agent.dynamic_code_generated_with_jvmti(env, name, address, length);
-    }
-}
-unsafe extern "system" fn trampoline_data_dump_request(_env: *mut jvmti::jvmtiEnv) {
-    if let Some(agent) = GLOBAL_AGENT.get() {
-        agent.data_dump_request();
-    }
-}
-unsafe extern "system" fn trampoline_class_file_load_hook(
-    env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv,
-    class_being_redefined: jni::jclass, loader: jni::jobject, name: *const std::os::raw::c_char,
-    protection_domain: jni::jobject, class_data_len: jni::jint, class_data: *const std::os::raw::c_uchar,
-    new_class_data_len: *mut jni::jint, new_class_data: *mut *mut std::os::raw::c_uchar
-) {
-    if let Some(agent) = GLOBAL_AGENT.get() {
-        agent.class_file_load_hook_with_jvmti(env, jni, class_being_redefined, loader, name, protection_domain, class_data_len, class_data, new_class_data_len, new_class_data);
-    }
+    dispatch_event!(
+        "DynamicCodeGenerated",
+        env,
+        std::ptr::null_mut(),
+        |agent, context| {
+            agent.dynamic_code_generated(
+                context,
+                callbacks::DynamicCodeGeneratedEvent::new(name, address, length),
+            );
+        }
+    );
 }
 
-// --- 4. Exceptions ---
+unsafe extern "system" fn trampoline_data_dump_request(env: *mut jvmti::jvmtiEnv) {
+    dispatch_event!(
+        "DataDumpRequest",
+        env,
+        std::ptr::null_mut(),
+        |agent, context| {
+            agent.data_dump_request(context);
+        }
+    );
+}
+
 unsafe extern "system" fn trampoline_exception(
-    _env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread, method: jni::jmethodID,
-    location: jvmti::jlocation, exception: jni::jobject, catch_method: jni::jmethodID, catch_location: jvmti::jlocation
+    env: *mut jvmti::jvmtiEnv,
+    jni: *mut jni::JNIEnv,
+    thread: jni::jthread,
+    method: jni::jmethodID,
+    location: jvmti::jlocation,
+    exception: jni::jobject,
+    catch_method: jni::jmethodID,
+    catch_location: jvmti::jlocation,
 ) {
-    if let Some(agent) = GLOBAL_AGENT.get() {
-        agent.exception(jni, thread, method, location, exception, catch_method, catch_location);
-    }
+    dispatch_event!("Exception", env, jni, |agent, context| {
+        agent.exception(
+            context,
+            callbacks::ExceptionEvent::new(
+                thread,
+                method,
+                location,
+                exception,
+                catch_method,
+                catch_location,
+            ),
+        );
+    });
 }
+
 unsafe extern "system" fn trampoline_exception_catch(
-    _env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread, method: jni::jmethodID,
-    location: jvmti::jlocation, exception: jni::jobject
+    env: *mut jvmti::jvmtiEnv,
+    jni: *mut jni::JNIEnv,
+    thread: jni::jthread,
+    method: jni::jmethodID,
+    location: jvmti::jlocation,
+    exception: jni::jobject,
 ) {
-    if let Some(agent) = GLOBAL_AGENT.get() {
-        agent.exception_catch(jni, thread, method, location, exception);
-    }
+    dispatch_event!("ExceptionCatch", env, jni, |agent, context| {
+        agent.exception_catch(
+            context,
+            callbacks::ExceptionCatchEvent::new(thread, method, location, exception),
+        );
+    });
 }
 
-// --- 5. Debugging ---
 unsafe extern "system" fn trampoline_single_step(
-    _env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread, method: jni::jmethodID, location: jvmti::jlocation
+    env: *mut jvmti::jvmtiEnv,
+    jni: *mut jni::JNIEnv,
+    thread: jni::jthread,
+    method: jni::jmethodID,
+    location: jvmti::jlocation,
 ) {
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.single_step(jni, thread, method, location); }
+    dispatch_event!("SingleStep", env, jni, |agent, context| {
+        agent.single_step(
+            context,
+            callbacks::LocationEvent::new(thread, method, location),
+        );
+    });
 }
+
 unsafe extern "system" fn trampoline_breakpoint(
-    _env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread, method: jni::jmethodID, location: jvmti::jlocation
+    env: *mut jvmti::jvmtiEnv,
+    jni: *mut jni::JNIEnv,
+    thread: jni::jthread,
+    method: jni::jmethodID,
+    location: jvmti::jlocation,
 ) {
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.breakpoint(jni, thread, method, location); }
+    dispatch_event!("Breakpoint", env, jni, |agent, context| {
+        agent.breakpoint(
+            context,
+            callbacks::LocationEvent::new(thread, method, location),
+        );
+    });
 }
+
 unsafe extern "system" fn trampoline_frame_pop(
-    _env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread, method: jni::jmethodID, was_popped: jni::jboolean
+    env: *mut jvmti::jvmtiEnv,
+    jni: *mut jni::JNIEnv,
+    thread: jni::jthread,
+    method: jni::jmethodID,
+    was_popped: jni::jboolean,
 ) {
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.frame_pop(jni, thread, method, was_popped); }
+    dispatch_event!("FramePop", env, jni, |agent, context| {
+        agent.frame_pop(
+            context,
+            callbacks::FramePopEvent::new(thread, method, was_popped),
+        );
+    });
 }
 
-// --- 5.5 Monitors ---
-unsafe extern "system" fn trampoline_monitor_wait(_env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread, object: jni::jobject, timeout: jni::jlong) {
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.monitor_wait(jni, thread, object, timeout); }
-}
-unsafe extern "system" fn trampoline_monitor_waited(_env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread, object: jni::jobject, timed_out: jni::jboolean) {
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.monitor_waited(jni, thread, object, timed_out); }
-}
-unsafe extern "system" fn trampoline_monitor_contended_enter(_env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread, object: jni::jobject) {
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.monitor_contended_enter(jni, thread, object); }
-}
-unsafe extern "system" fn trampoline_monitor_contended_entered(_env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread, object: jni::jobject) {
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.monitor_contended_entered(jni, thread, object); }
+unsafe extern "system" fn trampoline_monitor_wait(
+    env: *mut jvmti::jvmtiEnv,
+    jni: *mut jni::JNIEnv,
+    thread: jni::jthread,
+    object: jni::jobject,
+    timeout: jni::jlong,
+) {
+    dispatch_event!("MonitorWait", env, jni, |agent, context| {
+        agent.monitor_wait(
+            context,
+            callbacks::MonitorWaitEvent::new(thread, object, timeout),
+        );
+    });
 }
 
-// --- 6. Fields ---
+unsafe extern "system" fn trampoline_monitor_waited(
+    env: *mut jvmti::jvmtiEnv,
+    jni: *mut jni::JNIEnv,
+    thread: jni::jthread,
+    object: jni::jobject,
+    timed_out: jni::jboolean,
+) {
+    dispatch_event!("MonitorWaited", env, jni, |agent, context| {
+        agent.monitor_waited(
+            context,
+            callbacks::MonitorWaitedEvent::new(thread, object, timed_out),
+        );
+    });
+}
+
+unsafe extern "system" fn trampoline_monitor_contended_enter(
+    env: *mut jvmti::jvmtiEnv,
+    jni: *mut jni::JNIEnv,
+    thread: jni::jthread,
+    object: jni::jobject,
+) {
+    dispatch_event!("MonitorContendedEnter", env, jni, |agent, context| {
+        agent.monitor_contended_enter(context, callbacks::MonitorEvent::new(thread, object));
+    });
+}
+
+unsafe extern "system" fn trampoline_monitor_contended_entered(
+    env: *mut jvmti::jvmtiEnv,
+    jni: *mut jni::JNIEnv,
+    thread: jni::jthread,
+    object: jni::jobject,
+) {
+    dispatch_event!("MonitorContendedEntered", env, jni, |agent, context| {
+        agent.monitor_contended_entered(context, callbacks::MonitorEvent::new(thread, object));
+    });
+}
+
 unsafe extern "system" fn trampoline_field_access(
-    _env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread, method: jni::jmethodID,
-    location: jvmti::jlocation, field_klass: jni::jclass, object: jni::jobject, field: crate::sys::jni::jfieldID
+    env: *mut jvmti::jvmtiEnv,
+    jni: *mut jni::JNIEnv,
+    thread: jni::jthread,
+    method: jni::jmethodID,
+    location: jvmti::jlocation,
+    field_class: jni::jclass,
+    object: jni::jobject,
+    field: jni::jfieldID,
 ) {
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.field_access(jni, thread, method, location, field_klass, object, field); }
+    dispatch_event!("FieldAccess", env, jni, |agent, context| {
+        agent.field_access(
+            context,
+            callbacks::FieldAccessEvent::new(thread, method, location, field_class, object, field),
+        );
+    });
 }
+
 unsafe extern "system" fn trampoline_field_modification(
-    _env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread, method: jni::jmethodID,
-    location: jvmti::jlocation, field_klass: jni::jclass, object: jni::jobject, field: crate::sys::jni::jfieldID,
-    sig_type: std::os::raw::c_char, new_value: jni::jvalue
+    env: *mut jvmti::jvmtiEnv,
+    jni: *mut jni::JNIEnv,
+    thread: jni::jthread,
+    method: jni::jmethodID,
+    location: jvmti::jlocation,
+    field_class: jni::jclass,
+    object: jni::jobject,
+    field: jni::jfieldID,
+    signature_type: std::ffi::c_char,
+    new_value: jni::jvalue,
 ) {
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.field_modification(jni, thread, method, location, field_klass, object, field, sig_type, new_value); }
+    dispatch_event!("FieldModification", env, jni, |agent, context| {
+        agent.field_modification(
+            context,
+            callbacks::FieldModificationEvent::new(
+                thread,
+                method,
+                location,
+                field_class,
+                object,
+                field,
+                signature_type,
+                new_value,
+            ),
+        );
+    });
 }
 
-// --- 7. GC & Resource ---
-unsafe extern "system" fn trampoline_garbage_collection_start(_env: *mut jvmti::jvmtiEnv) {
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.garbage_collection_start(); }
+unsafe extern "system" fn trampoline_garbage_collection_start(env: *mut jvmti::jvmtiEnv) {
+    dispatch_event!(
+        "GarbageCollectionStart",
+        env,
+        std::ptr::null_mut(),
+        |agent, context| {
+            agent.garbage_collection_start(context);
+        }
+    );
 }
-unsafe extern "system" fn trampoline_garbage_collection_finish(_env: *mut jvmti::jvmtiEnv) {
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.garbage_collection_finish(); }
+
+unsafe extern "system" fn trampoline_garbage_collection_finish(env: *mut jvmti::jvmtiEnv) {
+    dispatch_event!(
+        "GarbageCollectionFinish",
+        env,
+        std::ptr::null_mut(),
+        |agent, context| {
+            agent.garbage_collection_finish(context);
+        }
+    );
 }
+
 unsafe extern "system" fn trampoline_resource_exhausted(
-    _env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, flags: jni::jint,
-    _reserved: *const std::os::raw::c_void, description: *const std::os::raw::c_char
+    env: *mut jvmti::jvmtiEnv,
+    jni: *mut jni::JNIEnv,
+    flags: jni::jint,
+    reserved: *const std::ffi::c_void,
+    description: *const std::ffi::c_char,
 ) {
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.resource_exhausted(jni, flags, description); }
+    dispatch_event!("ResourceExhausted", env, jni, |agent, context| {
+        agent.resource_exhausted(
+            context,
+            callbacks::ResourceExhaustedEvent::new(flags, reserved, description),
+        );
+    });
 }
 
-// --- 8. Objects ---
-unsafe extern "system" fn trampoline_object_free(_env: *mut jvmti::jvmtiEnv, tag: jni::jlong) {
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.object_free(tag); }
+unsafe extern "system" fn trampoline_object_free(env: *mut jvmti::jvmtiEnv, tag: jni::jlong) {
+    dispatch_event!("ObjectFree", env, std::ptr::null_mut(), |agent, context| {
+        agent.object_free(context, callbacks::ObjectFreeEvent::new(tag));
+    });
 }
+
 unsafe extern "system" fn trampoline_vm_object_alloc(
-    _env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread,
-    object: jni::jobject, klass: jni::jclass, size: jni::jlong
+    env: *mut jvmti::jvmtiEnv,
+    jni: *mut jni::JNIEnv,
+    thread: jni::jthread,
+    object: jni::jobject,
+    class: jni::jclass,
+    size: jni::jlong,
 ) {
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.vm_object_alloc(jni, thread, object, klass, size); }
+    dispatch_event!("VMObjectAlloc", env, jni, |agent, context| {
+        agent.vm_object_alloc(
+            context,
+            callbacks::ObjectAllocationEvent::new(thread, object, class, size),
+        );
+    });
 }
+
 unsafe extern "system" fn trampoline_sampled_object_alloc(
-    _env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv, thread: jni::jthread,
-    object: jni::jobject, klass: jni::jclass, size: jni::jlong
+    env: *mut jvmti::jvmtiEnv,
+    jni: *mut jni::JNIEnv,
+    thread: jni::jthread,
+    object: jni::jobject,
+    class: jni::jclass,
+    size: jni::jlong,
 ) {
-    if let Some(agent) = GLOBAL_AGENT.get() { agent.sampled_object_alloc(jni, thread, object, klass, size); }
+    dispatch_event!("SampledObjectAlloc", env, jni, |agent, context| {
+        agent.sampled_object_alloc(
+            context,
+            callbacks::ObjectAllocationEvent::new(thread, object, class, size),
+        );
+    });
 }
-
-
-
 
 /// Returns a pre-configured `jvmtiEventCallbacks` struct with all event trampolines wired up.
 ///
@@ -865,21 +1135,35 @@ unsafe extern "system" fn trampoline_sampled_object_alloc(
 ///
 /// # Example
 ///
-/// ```rust,ignore
-/// fn on_load(&self, vm: *mut jni::JavaVM, options: &str) -> jni::jint {
-///     let jvmti = Jvmti::new(vm).unwrap();
+/// ```rust,no_run
+/// use jvmti_bindings::prelude::*;
+///
+/// #[derive(Default)]
+/// struct LifecycleAgent;
+///
+/// impl Agent for LifecycleAgent {
+/// fn on_load(&self, context: AgentLoadContext<'_>) -> jni::jint {
+///     let Ok(jvmti) = context.vm().jvmti() else {
+///         return jni::JNI_ERR;
+///     };
 ///
 ///     // Wire up all event callbacks
 ///     let callbacks = get_default_callbacks();
-///     jvmti.set_event_callbacks(&callbacks);
+///     if jvmti.set_event_callbacks(callbacks).is_err() {
+///         return jni::JNI_ERR;
+///     }
 ///
 ///     // Enable specific events you care about
-///     jvmti.enable_event(
+///     if unsafe { jvmti.set_event_notification_mode(
+///         true,
 ///         jvmti::JVMTI_EVENT_VM_INIT,
-///         std::ptr::null_mut()
-///     );
+///         std::ptr::null_mut(),
+///     ) }.is_err() {
+///         return jni::JNI_ERR;
+///     }
 ///
 ///     jni::JNI_OK
+/// }
 /// }
 /// ```
 ///
@@ -937,11 +1221,10 @@ pub fn get_default_callbacks() -> jvmti::jvmtiEventCallbacks {
     }
 }
 
-
 /// Exports your agent type as a loadable JVMTI agent library.
 ///
-/// This macro generates the required `Agent_OnLoad` and `Agent_OnUnload` FFI entry points
-/// that the JVM expects when loading an agent via `-agentpath` or `-agentlib`.
+/// This macro generates the required `Agent_OnLoad`, `Agent_OnAttach`, and
+/// `Agent_OnUnload` FFI entry points used for startup and dynamic agent loading.
 ///
 /// # Requirements
 ///
@@ -952,17 +1235,20 @@ pub fn get_default_callbacks() -> jvmti::jvmtiEventCallbacks {
 ///
 /// # Generated Functions
 ///
-/// The macro generates two `extern "system"` functions:
+/// The macro generates three `extern "system"` functions:
 ///
 /// - **`Agent_OnLoad`**: Called by the JVM when the agent is loaded. Creates your agent
 ///   instance, registers it globally, and calls your [`Agent::on_load`] method.
+///
+/// - **`Agent_OnAttach`**: Called for each successful dynamic attach request. Reuses the
+///   process-global agent and calls [`Agent::on_attach`] with that request's exact context.
 ///
 /// - **`Agent_OnUnload`**: Called by the JVM during shutdown. Calls your [`Agent::on_unload`]
 ///   method for cleanup.
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// ```rust,no_run
 /// use jvmti_bindings::prelude::*;
 ///
 /// #[derive(Default)]
@@ -971,8 +1257,8 @@ pub fn get_default_callbacks() -> jvmti::jvmtiEventCallbacks {
 /// }
 ///
 /// impl Agent for MyAgent {
-///     fn on_load(&self, vm: *mut jni::JavaVM, options: &str) -> jni::jint {
-///         println!("Agent loaded with options: {}", options);
+///     fn on_load(&self, context: AgentLoadContext<'_>) -> jni::jint {
+///         println!("Agent loaded with options: {:?}", context.options_lossy());
 ///         jni::JNI_OK
 ///     }
 /// }
@@ -1026,67 +1312,27 @@ pub fn get_default_callbacks() -> jvmti::jvmtiEventCallbacks {
 #[macro_export]
 macro_rules! export_agent {
     ($agent_type:ty) => {
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         pub unsafe extern "system" fn Agent_OnLoad(
             vm: *mut $crate::sys::jni::JavaVM,
             options: *mut std::ffi::c_char,
             reserved: *mut std::ffi::c_void,
         ) -> $crate::sys::jni::jint {
-
-            // 1. Create and Register the Agent
-            let agent = Box::new(<$agent_type>::default());
-            if let Err(_) = $crate::set_global_agent(agent) {
-                return $crate::sys::jni::JNI_ERR;
-            }
-
-            // 2. Handle Options
-            let options_str = if options.is_null() {
-                ""
-            } else {
-                std::ffi::CStr::from_ptr(options).to_str().unwrap_or("")
-            };
-
-            // 3. Call the User's Logic
-            if let Some(global_agent) = $crate::GLOBAL_AGENT.get() {
-                return global_agent.on_load(vm, options_str);
-            }
-
-            $crate::sys::jni::JNI_ERR
+            unsafe { $crate::__agent_on_load::<$agent_type>(vm, options, reserved) }
         }
 
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         pub unsafe extern "system" fn Agent_OnAttach(
             vm: *mut $crate::sys::jni::JavaVM,
             options: *mut std::ffi::c_char,
             reserved: *mut std::ffi::c_void,
         ) -> $crate::sys::jni::jint {
-
-            // 1. Create and Register the Agent
-            let agent = Box::new(<$agent_type>::default());
-            if let Err(_) = $crate::set_global_agent(agent) {
-                return $crate::sys::jni::JNI_ERR;
-            }
-
-            // 2. Handle Options
-            let options_str = if options.is_null() {
-                ""
-            } else {
-                std::ffi::CStr::from_ptr(options).to_str().unwrap_or("")
-            };
-
-            // 3. Call the User's Logic
-            if let Some(global_agent) = $crate::GLOBAL_AGENT.get() {
-                return global_agent.on_attach(vm, options_str);
-            }
-
-            $crate::sys::jni::JNI_ERR
+            unsafe { $crate::__agent_on_attach::<$agent_type>(vm, options, reserved) }
         }
 
-        #[no_mangle]
+        #[unsafe(no_mangle)]
         pub unsafe extern "system" fn Agent_OnUnload(vm: *mut $crate::sys::jni::JavaVM) {
-             if let Some(agent) = $crate::GLOBAL_AGENT.get() {
-                agent.on_unload();
-            }
+            unsafe { $crate::__agent_on_unload(vm) }
         }
     };
 }

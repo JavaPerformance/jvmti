@@ -12,3 +12,5 @@ This guide highlights common footguns when writing JVM agents.
 8. Mis-sized `new_class_data_len` corrupts class loading.
 9. JVMTI buffers must be deallocated with `Deallocate`, not `free`.
 10. Some events are disabled by default for performance reasons.
+11. A newer Rust table layout does not make a newer slot callable on an older JVM; use the version-gated wrappers.
+12. Value-object allocation callbacks may provide a null `jobject` even when class and size are valid.

@@ -1,17 +1,6 @@
-use std::mem::{align_of, size_of, MaybeUninit};
-use std::ptr::addr_of;
+use std::mem::{align_of, offset_of, size_of};
 
 use jvmti_bindings::sys::jvmti;
-
-macro_rules! offset_of {
-    ($ty:ty, $field:ident) => {{
-        let value = MaybeUninit::<$ty>::uninit();
-        let base = value.as_ptr();
-        // `addr_of!` forms the field address without reading uninitialized data.
-        let field = unsafe { addr_of!((*base).$field) };
-        field as usize - base as usize
-    }};
-}
 
 #[test]
 fn event_ids_match_the_jvmti_specification() {
@@ -58,7 +47,7 @@ fn event_ids_match_the_jvmti_specification() {
 }
 
 #[test]
-fn callback_table_matches_jdk_8_through_27_abi() {
+fn callback_table_matches_jdk_8_through_28_abi() {
     type Callbacks = jvmti::jvmtiEventCallbacks;
     let pointer = size_of::<*const ()>();
 
@@ -94,8 +83,8 @@ fn callback_table_matches_jdk_8_through_27_abi() {
     assert_eq!(
         offset_of!(Callbacks, SampledObjectAlloc) + pointer,
         37 * pointer
-    ); // JDK 11-20
-    assert_eq!(size_of::<Callbacks>(), 39 * pointer); // JDK 21+
+    ); // JDK 11-18
+    assert_eq!(size_of::<Callbacks>(), 39 * pointer); // JDK 19+
 }
 
 #[test]

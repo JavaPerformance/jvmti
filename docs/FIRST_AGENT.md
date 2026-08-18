@@ -15,6 +15,7 @@ We'll build an agent that:
 ## What You Should Know Already
 
 This guide assumes:
+- You use Rust 1.85 or newer (Edition 2024)
 - You know Rust basics (ownership, `Result`, traits)
 - You know what a JVM agent is (`-agentpath`)
 - You are comfortable debugging native code if needed
@@ -39,7 +40,7 @@ In `Cargo.toml`:
 crate-type = ["cdylib"]
 
 [dependencies]
-jvmti-bindings = "2"
+jvmti-bindings = "3"
 ```
 
 **Why `cdylib`?**
@@ -87,14 +88,14 @@ pub struct ClassCounterAgent {
 }
 
 impl Agent for ClassCounterAgent {
-    fn on_load(&self, vm: *mut jni::JavaVM, options: &str) -> jni::jint {
+    fn on_load(&self, context: AgentLoadContext<'_>) -> jni::jint {
         eprintln!("[agent] Loading class counter agent");
-        if !options.is_empty() {
+        if let Some(options) = context.options_lossy() {
             eprintln!("[agent] Options: {}", options);
         }
 
         // Get JVMTI environment
-        let jvmti_env = match Jvmti::new(vm) {
+        let jvmti_env = match context.vm().jvmti() {
             Ok(env) => env,
             Err(e) => {
                 eprintln!("[agent] Failed to get JVMTI: {:?}", e);
@@ -136,27 +137,20 @@ impl Agent for ClassCounterAgent {
         jni::JNI_OK
     }
 
-    fn vm_init(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread) {
+    fn vm_init(&self, _context: CallbackContext<'_>, _event: ThreadEvent) {
         eprintln!("[agent] VM initialized");
     }
 
     fn class_file_load_hook(
         &self,
-        _jni: *mut jni::JNIEnv,
-        _class_being_redefined: jni::jclass,
-        _loader: jni::jobject,
-        _name: *const std::os::raw::c_char,
-        _protection_domain: jni::jobject,
-        _class_data_len: jni::jint,
-        _class_data: *const u8,
-        _new_class_data_len: *mut jni::jint,
-        _new_class_data: *mut *mut u8,
+        _context: CallbackContext<'_>,
+        _event: ClassFileLoadHookEvent<'_>,
     ) {
         // Just count - this is a hot path, keep it fast!
         self.loaded_classes.fetch_add(1, Ordering::Relaxed);
     }
 
-    fn vm_death(&self, _jni: *mut jni::JNIEnv) {
+    fn vm_death(&self, _context: CallbackContext<'_>) {
         let count = self.loaded_classes.load(Ordering::Relaxed);
         eprintln!("[agent] VM shutting down");
         eprintln!("[agent] Total classes loaded: {}", count);

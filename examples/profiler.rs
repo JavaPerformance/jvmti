@@ -14,8 +14,8 @@ struct MethodProfiler {
 }
 
 impl Agent for MethodProfiler {
-    fn on_load(&self, vm: *mut jni::JavaVM, _options: &str) -> jni::jint {
-        let jvmti = match Jvmti::new(vm) {
+    fn on_load(&self, context: AgentLoadContext<'_>) -> jni::jint {
+        let jvmti = match context.vm().jvmti() {
             Ok(env) => env,
             Err(e) => {
                 eprintln!("[profiler] Failed to get JVMTI: {:?}", e);
@@ -35,7 +35,7 @@ impl Agent for MethodProfiler {
             return jni::JNI_ERR;
         }
 
-        if let Err(e) = jvmti.enable_event(jvmti::JVMTI_EVENT_METHOD_ENTRY, std::ptr::null_mut()) {
+        if let Err(e) = jvmti.enable_events_global(&[jvmti::JVMTI_EVENT_METHOD_ENTRY]) {
             eprintln!("[profiler] Failed to enable events: {:?}", e);
             return jni::JNI_ERR;
         }
@@ -43,11 +43,11 @@ impl Agent for MethodProfiler {
         jni::JNI_OK
     }
 
-    fn method_entry(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread, _method: jni::jmethodID) {
+    fn method_entry(&self, _context: CallbackContext<'_>, _event: MethodEvent) {
         self.method_entries.fetch_add(1, Ordering::Relaxed);
     }
 
-    fn vm_death(&self, _jni: *mut jni::JNIEnv) {
+    fn vm_death(&self, _context: CallbackContext<'_>) {
         let count = self.method_entries.load(Ordering::Relaxed);
         eprintln!("[profiler] Total method entries: {}", count);
     }

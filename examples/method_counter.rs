@@ -34,17 +34,18 @@ struct MethodCounter {
 }
 
 impl Agent for MethodCounter {
-    fn on_load(&self, vm: *mut jni::JavaVM, options: &str) -> jni::jint {
+    fn on_load(&self, context: AgentLoadContext<'_>) -> jni::jint {
         println!("[MethodCounter] Loading agent...");
 
         // Parse options (example: "verbose" flag)
+        let options = context.options_str().ok().flatten().unwrap_or_default();
         let verbose = options.contains("verbose");
         if verbose {
             println!("[MethodCounter] Verbose mode enabled");
         }
 
         // Get JVMTI environment
-        let jvmti_env = match Jvmti::new(vm) {
+        let jvmti_env = match context.vm().jvmti() {
             Ok(env) => env,
             Err(e) => {
                 eprintln!("[MethodCounter] Failed to get JVMTI env: {:?}", e);
@@ -63,21 +64,21 @@ impl Agent for MethodCounter {
         }
 
         // Also enable VM death so we can print summary
-        let _ = jvmti_env.enable_event(jvmti::JVMTI_EVENT_VM_DEATH, std::ptr::null_mut());
+        let _ = jvmti_env.enable_events_global(&[jvmti::JVMTI_EVENT_VM_DEATH]);
 
         println!("[MethodCounter] Agent ready, counting methods...");
         jni::JNI_OK
     }
 
-    fn method_entry(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread, _method: jni::jmethodID) {
+    fn method_entry(&self, _context: CallbackContext<'_>, _event: MethodEvent) {
         self.method_entries.fetch_add(1, Ordering::Relaxed);
     }
 
-    fn method_exit(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread, _method: jni::jmethodID) {
+    fn method_exit(&self, _context: CallbackContext<'_>, _event: MethodExitEvent) {
         self.method_exits.fetch_add(1, Ordering::Relaxed);
     }
 
-    fn vm_death(&self, _jni: *mut jni::JNIEnv) {
+    fn vm_death(&self, _context: CallbackContext<'_>) {
         let entries = self.method_entries.load(Ordering::Relaxed);
         let exits = self.method_exits.load(Ordering::Relaxed);
         println!("[MethodCounter] === Summary ===");

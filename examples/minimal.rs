@@ -20,20 +20,23 @@ use jvmti_bindings::prelude::*;
 struct MinimalAgent;
 
 impl Agent for MinimalAgent {
-    fn on_load(&self, _vm: *mut jni::JavaVM, options: &str) -> jni::jint {
-        println!("[MinimalAgent] Loaded with options: '{}'", options);
+    fn on_load(&self, context: AgentLoadContext<'_>) -> jni::jint {
+        println!(
+            "[MinimalAgent] Loaded with options: '{}'",
+            context.options_lossy().as_deref().unwrap_or("")
+        );
         jni::JNI_OK
     }
 
-    fn on_unload(&self) {
+    fn on_unload(&self, _context: AgentUnloadContext<'_>) {
         println!("[MinimalAgent] Unloading...");
     }
 
-    fn vm_init(&self, _jni: *mut jni::JNIEnv, _thread: jni::jthread) {
+    fn vm_init(&self, _context: CallbackContext<'_>, _event: ThreadEvent) {
         println!("[MinimalAgent] VM initialized!");
     }
 
-    fn vm_death(&self, _jni: *mut jni::JNIEnv) {
+    fn vm_death(&self, _context: CallbackContext<'_>) {
         println!("[MinimalAgent] VM shutting down...");
     }
 }
