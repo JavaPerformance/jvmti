@@ -72,8 +72,8 @@ Java agents (`java.lang.instrument`) are simpler but can't access low-level feat
 | **Explicit safety model** | Unsafe operations centralized; APIs return `Result` |
 | **Complete surface** | Complete JDK 28 JNI and JVM TI tables, mapped to Rust types |
 | **Agent-first ergonomics** | Structured callbacks, capability management, RAII resources |
-| **No hidden dependencies** | No bindgen, no build-time JVM, no global allocators, and no third-party crates in any Cargo dependency graph |
-| **Long-term compatibility** | ABI-verified against OpenJDK headers, JDK 8 through current JDK 28 |
+| **No hidden dependencies** | Consumers need no bindgen or build-time JVM, no global allocator is installed, and no third-party crate appears in any Cargo dependency graph |
+| **Long-term compatibility** | Source-ABI verified against pinned OpenJDK 8-28 revisions; live callback-tested on installed runtimes through JDK 27 |
 
 ## Safety and FFI
 
@@ -97,8 +97,10 @@ Details: `docs/PUBLIC_API.md`.
 ## Toolchain Contract
 
 Version 3.0 requires Rust 1.85 or newer and uses Edition 2024. This is a source
-toolchain requirement only: the generated native agent ABI remains compatible
-with the supported JDK 8-28 runtime matrix.
+toolchain requirement only: the generated native agent uses runtime-gated table
+prefixes source-verified for JDK 8-28. Live callback delivery is verified on
+installed runtimes through JDK 27; JDK 28 preview semantics remain a release
+gate rather than a completed runtime claim.
 
 ## Raw FFI Access
 
@@ -107,9 +109,14 @@ If you need raw JNI/JVMTI functions, use:
 2. `JniEnv::raw()` and `Jvmti::raw()` to access the underlying raw pointers.
 3. `CallbackContext` for the exact callback-scoped `jvmtiEnv*` and optional thread-local `JNIEnv*` supplied by the JVM.
 
+`JniEnv` covers every fixed-signature JNI operation, including all typed
+`jvalue` (`A`) call families. The C variadic and `va_list` slots remain raw-only
+because stable Rust cannot construct or portably forward arbitrary C variadic
+arguments; prefer the corresponding `A` operation.
+
 ## Attach and Threading Rules
 
-1. `Agent_OnAttach` is supported via the `export_agent!` macro and `Agent::on_attach`.
+1. `Agent_OnAttach` is supported via the `export_agent!` macro and `Agent::on_attach`; repeated attach reuses the same process-global agent and may invoke `on_attach` concurrently.
 2. `JNIEnv` is thread-local and must only be used on its originating thread.
 3. `GlobalRef` cleanup attaches to the JVM when needed, but you should still manage lifetimes explicitly.
 4. Callback payloads are complete and canonical; use `context.jvmti()` and `context.jni()` instead of rediscovering environments from `JavaVM`.
@@ -220,7 +227,9 @@ struct AttachLogger;
 impl Agent for AttachLogger {
     fn on_attach(&self, context: AgentLoadContext<'_>) -> jni::jint {
         println!("[AttachLogger] attached with options: {:?}", context.options_lossy());
-        let _jvmti = context.vm().jvmti().expect("get JVMTI");
+        let Ok(_jvmti) = context.vm().jvmti() else {
+            return jni::JNI_ERR;
+        };
         jni::JNI_OK
     }
 }
@@ -240,11 +249,18 @@ jcmd <pid> JVMTI.agent_load /abs/path/to/libattach_logger.so "opt1=val1"
 
 This crate now includes a zero-dependency class file parser that understands all standard attributes from Java 8 through Java 27. Use it inside `ClassFileLoadHook` to inspect or transform class metadata.
 
+`ClassFile::parse` applies conservative input-size, cumulative allocation,
+annotation-nesting, and recursive-attribute limits for untrusted input. Use
+`ClassFile::parse_with_limits` and `ClassFileParseLimits` only when a tool has a
+justified need for different bounds.
+
 ```rust
 use jvmti_bindings::classfile::ClassFile;
 
 fn parse_class(bytes: &[u8]) {
-    let classfile = ClassFile::parse(bytes).expect("valid class file");
+    let Ok(classfile) = ClassFile::parse(bytes) else {
+        return;
+    };
     println!("major version = {}", classfile.major_version);
     println!("attributes = {}", classfile.attributes.len());
 }
@@ -270,7 +286,9 @@ fn walk_attributes(attrs: &[AttributeInfo]) {
 }
 
 fn parse_class(bytes: &[u8]) {
-    let classfile = ClassFile::parse(bytes).expect("valid class file");
+    let Ok(classfile) = ClassFile::parse(bytes) else {
+        return;
+    };
     walk_attributes(&classfile.attributes);
     for field in &classfile.fields {
         walk_attributes(&field.attributes);
@@ -300,10 +318,12 @@ let env = unsafe { vm.creator_env() }; // only valid on the creating thread
 
 std::thread::scope(|s| {
     s.spawn(|| {
-        vm.with_attached_current_thread(|env| {
+        let result = vm.with_attached_current_thread(|env| {
             let _string = env.find_class("java/lang/String");
-        })
-        .expect("attach current thread");
+        });
+        if let Err(code) = result {
+            eprintln!("AttachCurrentThread failed: {}", jni::result_name(code));
+        }
     });
 });
 
@@ -327,6 +347,36 @@ let length = unsafe { jni.get_method_id_cstr(string_class, c"length", c"()I")? }
 Use the `*_cstr` methods for fixed class names, member names, and descriptors in
 high-frequency callbacks. The `&str` variants retain the same behavior and are
 appropriate when names are dynamic or the call is not performance-sensitive.
+Pre-encoded UTF-16 can similarly use `new_string_utf16` without a temporary
+Rust buffer.
+
+## JNI Paired Operations
+
+JNI functions that lend native array or string storage return allocation-free
+RAII guards instead of an unmatched pointer/release pair:
+
+```rust,ignore
+let mut values = unsafe { jni.get_int_array_elements(array) }
+    .expect("JVM returned array elements");
+values[0] = 42;
+// Normal drop copies back when required and releases exactly once.
+```
+
+`PrimitiveArrayElements`, `PrimitiveArrayCritical`, and `StringCritical`
+provide explicit `close()` methods and release on drop. `abort()` requests that
+copied array storage not be written back, but cannot undo writes when the JVM
+returned pinned storage. Do not block or make arbitrary JNI calls while a
+critical guard is live.
+
+`push_local_frame` returns a `LocalFrame` that pops on drop and can explicitly
+promote one reference to the previous frame. `monitor_enter` returns a
+`JavaMonitorGuard` that exits on drop. Their `*_raw` methods remain unsafe for
+integrations that deliberately manage the matching operation themselves.
+
+JNI, JVM TI, and class-file `CONSTANT_Utf8` strings use Java Modified UTF-8,
+not ordinary UTF-8. The `mutf8` module provides strict, lossy, and exact UTF-16
+conversions. Use exact UTF-16 APIs when unpaired Java surrogates must survive a
+round trip.
 
 ## Examples
 
@@ -395,9 +445,11 @@ This crate enforces the following invariants:
 | Invariant | Enforcement |
 |-----------|-------------|
 | `JNIEnv` is thread-local | `JniEnv` wrapper is not `Send` |
-| Local refs don't escape | `LocalRef<'a>` tied to `JniEnv` lifetime |
-| Global refs are freed | `GlobalRef` releases on `Drop` |
+| Owned local refs are scoped | `LocalRef<'a>` is tied to `JniEnv`; raw JNI/JVM TI object returns still require explicit local-reference management |
+| Global refs are freed | `GlobalRef` and `WeakGlobalRef` release on `Drop`; fallible construction and `close()` expose lifecycle failures |
 | JVMTI memory properly freed | `JvmtiAllocation` deallocates on drop; raw ownership transfer is explicit and unsafe |
+| Raw monitors are released | `RawMonitor` destroys on drop; entered `RawMonitorGuard` exits on drop; explicit failure retains ownership for one fallback attempt |
+| JNI paired operations are owned | Array/critical leases, local frames, and entered Java monitors close on drop; raw unmatched operations remain explicit unsafe escape hatches |
 | Errors are explicit | JVMTI methods return `Result`, JNI helpers use `Option`/`Result` |
 
 ### What Remains Unsafe
@@ -416,7 +468,7 @@ Rust helps — but JVMTI is still a sharp tool.
 **Yes, if you are:**
 - Building profilers, tracers, debuggers, or instrumentation
 - Want Rust's type system around JVMTI's sharp edges
-- Need a single crate that works across JDK 8 through current JDK 28
+- Need one crate with source-verified JDK 8-28 native layouts and runtime gates
 - Comfortable reading JVMTI docs for advanced use cases
 
 **Probably not, if you:**
@@ -440,6 +492,7 @@ Rust helps — but JVMTI is still a sharp tool.
 │   JniEnv     - JNI operations plus ClassLoader/JPMS      │
 │   LocalRef   - RAII guard, prevented from escaping       │
 │   GlobalRef  - RAII guard, releases on drop              │
+│   JNI leases - Array/string native storage RAII guards    │
 ├─────────────────────────────────────────────────────────┤
 │              Class File Parser (classfile)               │
 │   ClassFile  - All standard Java 8-27 attributes         │
@@ -461,10 +514,14 @@ Events require three steps — capabilities, callbacks, then enable:
 use jvmti_bindings::prelude::*;
 
 fn on_load(&self, context: AgentLoadContext<'_>) -> jni::jint {
-    let jvmti_env = context.vm().jvmti().expect("Failed to get JVMTI");
+    let Ok(jvmti_env) = context.vm().jvmti() else {
+        return jni::JNI_ERR;
+    };
 
     // Requests capabilities, wires callbacks, and enables ClassFileLoadHook.
-    jvmti_env.configure_class_file_load_hook_agent().expect("configure");
+    if jvmti_env.configure_class_file_load_hook_agent().is_err() {
+        return jni::JNI_ERR;
+    }
 
     jni::JNI_OK
 }
@@ -523,7 +580,7 @@ access to table tails, reclaimed slots, and capability bits on older JVMs.
 |--------|--------|
 | API stability | 3.0 candidate; subsequent changes follow SemVer |
 | JVMTI coverage | 156/156 (100%) |
-| JNI coverage | Complete through current JDK 28 (237 table slots) |
+| JNI coverage | Complete through pinned JDK 28 source (237 table slots); live runtime evidence through JDK 27 |
 | Dependencies | Zero third-party crates across all features and development targets |
 | Rust toolchain | Rust 1.85+; Edition 2024 |
 | Testing | Classfile parser, doctests, all-feature builds, example agents |
@@ -555,9 +612,12 @@ cargo build --release --example class_logger
 - [**Embedding A JVM**](docs/EMBEDDING.md) — Start a JVM from Rust and attach threads
 - [**Dynamic Attach**](docs/ATTACH.md) — Agent_OnAttach example and notes
 - [**Safety and FFI Checklist**](docs/SAFETY.md) — Safety rules and audit checklist
+- [**Independent Unsafe/FFI Review**](docs/UNSAFE_FFI_REVIEW.md) — reviewer scope and acceptance record
 - [**Pitfalls and Footguns**](docs/PITFALLS.md) — Common JVMTI/JNI traps
 - [**Compatibility Matrix**](docs/COMPATIBILITY.md) — JDK 8-28 coverage and JDK 29 gate
 - [**Versioning Policy**](docs/VERSIONING.md) — API stability and SemVer plan
+- [**Release Procedure**](docs/RELEASING.md) — clean candidate, attestations, SBOM, and 3.x compatibility
+- [**Definitive 3.0 Release Gates**](docs/DEFINITIVE_3_0_RELEASE_GATES.md) — mechanical ABI, lifecycle, ownership, and publication criteria
 - [**API Reference**](https://docs.rs/jvmti-bindings) — Complete API documentation on docs.rs
 
 ## License

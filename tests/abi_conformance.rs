@@ -36,6 +36,7 @@ fn rust_layout(feature: u16) -> HashMap<&'static str, usize> {
     }
 
     size!(jvmti::jvmtiError, "jvmtiError");
+    size!(jni::jobjectRefType, "jobjectRefType");
     size!(jvmti::jvmtiTimerInfo, "jvmtiTimerInfo");
     offset!(jvmti::jvmtiTimerInfo, "jvmtiTimerInfo", kind);
     offset!(jvmti::jvmtiTimerInfo, "jvmtiTimerInfo", reserved1);
@@ -369,36 +370,141 @@ fn raw_bindings_match_selected_openjdk_headers() {
         }
     }
 
-    let expected_caps = [
-        (
-            "can_tag_objects",
-            capability_bytes(|caps| caps.set_can_tag_objects(true)),
-        ),
-        (
-            "can_generate_method_entry_events",
-            capability_bytes(|caps| caps.set_can_generate_method_entry_events(true)),
-        ),
-        (
-            "can_generate_garbage_collection_events",
-            capability_bytes(|caps| caps.set_can_generate_garbage_collection_events(true)),
-        ),
-        (
-            "can_generate_early_vmstart",
-            capability_bytes(|caps| caps.set_can_generate_early_vmstart(true)),
-        ),
-        (
-            "can_generate_sampled_object_alloc_events",
-            capability_bytes(|caps| caps.set_can_generate_sampled_object_alloc_events(true)),
-        ),
-        (
-            "can_support_virtual_threads",
-            capability_bytes(|caps| caps.set_can_support_virtual_threads(true)),
-        ),
-        (
-            "can_support_value_objects",
-            capability_bytes(|caps| caps.set_can_support_value_objects(true)),
-        ),
-    ];
+    let mut expected_caps = Vec::new();
+    macro_rules! capability {
+        ($setter:ident, $name:ident) => {
+            expected_caps.push((
+                stringify!($name),
+                capability_bytes(|caps| caps.$setter(true)),
+            ));
+        };
+    }
+    capability!(set_can_tag_objects, can_tag_objects);
+    capability!(
+        set_can_generate_field_modification_events,
+        can_generate_field_modification_events
+    );
+    capability!(
+        set_can_generate_field_access_events,
+        can_generate_field_access_events
+    );
+    capability!(set_can_get_bytecodes, can_get_bytecodes);
+    capability!(set_can_get_synthetic_attribute, can_get_synthetic_attribute);
+    capability!(set_can_get_owned_monitor_info, can_get_owned_monitor_info);
+    capability!(
+        set_can_get_current_contended_monitor,
+        can_get_current_contended_monitor
+    );
+    capability!(set_can_get_monitor_info, can_get_monitor_info);
+    capability!(set_can_pop_frame, can_pop_frame);
+    capability!(set_can_redefine_classes, can_redefine_classes);
+    capability!(set_can_signal_thread, can_signal_thread);
+    capability!(set_can_get_source_file_name, can_get_source_file_name);
+    capability!(set_can_get_line_numbers, can_get_line_numbers);
+    capability!(
+        set_can_get_source_debug_extension,
+        can_get_source_debug_extension
+    );
+    capability!(set_can_access_local_variables, can_access_local_variables);
+    capability!(
+        set_can_maintain_original_method_order,
+        can_maintain_original_method_order
+    );
+    capability!(
+        set_can_generate_single_step_events,
+        can_generate_single_step_events
+    );
+    capability!(
+        set_can_generate_exception_events,
+        can_generate_exception_events
+    );
+    capability!(
+        set_can_generate_frame_pop_events,
+        can_generate_frame_pop_events
+    );
+    capability!(
+        set_can_generate_breakpoint_events,
+        can_generate_breakpoint_events
+    );
+    capability!(set_can_suspend, can_suspend);
+    capability!(set_can_redefine_any_class, can_redefine_any_class);
+    capability!(
+        set_can_get_current_thread_cpu_time,
+        can_get_current_thread_cpu_time
+    );
+    capability!(set_can_get_thread_cpu_time, can_get_thread_cpu_time);
+    capability!(
+        set_can_generate_method_entry_events,
+        can_generate_method_entry_events
+    );
+    capability!(
+        set_can_generate_method_exit_events,
+        can_generate_method_exit_events
+    );
+    capability!(
+        set_can_generate_all_class_hook_events,
+        can_generate_all_class_hook_events
+    );
+    capability!(
+        set_can_generate_compiled_method_load_events,
+        can_generate_compiled_method_load_events
+    );
+    capability!(set_can_generate_monitor_events, can_generate_monitor_events);
+    capability!(
+        set_can_generate_vm_object_alloc_events,
+        can_generate_vm_object_alloc_events
+    );
+    capability!(
+        set_can_generate_native_method_bind_events,
+        can_generate_native_method_bind_events
+    );
+    capability!(
+        set_can_generate_garbage_collection_events,
+        can_generate_garbage_collection_events
+    );
+    capability!(
+        set_can_generate_object_free_events,
+        can_generate_object_free_events
+    );
+    capability!(set_can_force_early_return, can_force_early_return);
+    capability!(
+        set_can_get_owned_monitor_stack_depth_info,
+        can_get_owned_monitor_stack_depth_info
+    );
+    capability!(set_can_get_constant_pool, can_get_constant_pool);
+    capability!(
+        set_can_set_native_method_prefix,
+        can_set_native_method_prefix
+    );
+    capability!(set_can_retransform_classes, can_retransform_classes);
+    capability!(set_can_retransform_any_class, can_retransform_any_class);
+    capability!(
+        set_can_generate_resource_exhaustion_heap_events,
+        can_generate_resource_exhaustion_heap_events
+    );
+    capability!(
+        set_can_generate_resource_exhaustion_threads_events,
+        can_generate_resource_exhaustion_threads_events
+    );
+    if feature >= 9 {
+        capability!(set_can_generate_early_vmstart, can_generate_early_vmstart);
+        capability!(
+            set_can_generate_early_class_hook_events,
+            can_generate_early_class_hook_events
+        );
+    }
+    if feature >= 11 {
+        capability!(
+            set_can_generate_sampled_object_alloc_events,
+            can_generate_sampled_object_alloc_events
+        );
+    }
+    if feature >= 19 {
+        capability!(set_can_support_virtual_threads, can_support_virtual_threads);
+    }
+    if feature >= 28 {
+        capability!(set_can_support_value_objects, can_support_value_objects);
+    }
     for (name, rust_bytes) in expected_caps {
         let key = format!("capability.{name}");
         if let Some(c_bytes) = c.get(&key) {

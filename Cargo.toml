@@ -1,7 +1,7 @@
 # jvmti - Complete JNI/JVMTI bindings for Rust
 #
 # Zero third-party crate dependencies across every feature and development target.
-# ABI-verified against JDK 8 through current JDK 28.
+# Source-ABI verified against pinned OpenJDK 8-28 revisions; live-tested through JDK 27.
 
 [package]
 name = "jvmti-bindings"
@@ -85,6 +85,10 @@ crate-type = ["cdylib"]
 
 [[example]]
 name = "callback_counter_bench"
+crate-type = ["cdylib"]
+
+[[example]]
+name = "callback_allocation_audit"
 crate-type = ["cdylib"]
 
 [[example]]

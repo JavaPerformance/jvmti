@@ -1,7 +1,7 @@
 # JVMTI 3.0.0 ABI and Callback Fidelity Roadmap
 
-Status: core implementation validated on local `feature/jvmti-3.0.0`; specialized release-candidate gates remain  
-Audit date: 2026-08-17  
+Status: implementation complete on local `feature/jvmti-3.0-rust-1.85`; final release-candidate validation remains
+Audit date: 2026-08-17; implementation status updated 2026-08-18
 Baseline: `main` at `24ed8db4c23354484548cd37edb9e4dc9ff9e0b6`, crate version 2.3.0
 
 ## Executive decision
@@ -283,8 +283,9 @@ The wrapper's safety boundary needs a focused correction:
   safe method.
 - `LocalRef::new` is safe but will pass any supplied `jobject` to
   `DeleteLocalRef` on drop.
-- `GlobalRef::new` is safe but consumes an unchecked local reference and passes
-  it to `NewGlobalRef` before retaining a `JavaVM*` for cleanup.
+- `GlobalRef::new` was safe and accepted an unchecked raw local reference, passing
+  it to `NewGlobalRef` before retaining a `JavaVM*` for cleanup. The 3.0 API is
+  unsafe and fallible and acquires the VM before creating the reference.
 
 Minimum 3.0.0 correction:
 
@@ -583,6 +584,10 @@ notes. Provide a callback-by-callback 2.3-to-3.0 signature table and state that
 
 ## 3.0.0 release gates
 
+The normalized, executable release-candidate checklist is maintained in
+`docs/DEFINITIVE_3_0_RELEASE_GATES.md`. The historical findings and gates below
+remain as the audit record.
+
 3.0.0 is not ready until all of the following are true:
 
 - The C/Rust ABI conformance suite passes for every supported JDK line.
@@ -668,9 +673,15 @@ The current local implementation passes:
 - `scripts/check-zero-dependencies.sh`, proving that every feature and
   development target has zero third-party crate dependencies;
 - the pinned C/Rust ABI matrix for every feature release from JDK 8 through
-  the current JDK 28 source snapshot; and
+  the current JDK 28 source snapshot, including 440 exact table signatures, 31
+  native records, and 562 field offsets;
+- an executable host `va_list` forwarding proof, target-aware Linux AArch64
+  JNI variadic declarations, and endian-aware JVM TI capability bits;
 - real callback delivery on seven installed JVMs spanning JDK 8, 11, 17, 21,
-  25, and 27.
+  25, and 27;
+- live Modified UTF-8, repeated-attach, and heap-graph proofs;
+- allocation-free callback dispatch with one and eight Java threads; and
+- an external startup-and-attach agent compiled from the packaged crate.
 - the 2.x-to-3.0 migration contract, including all 34 callback mappings, the
   complete JNI/JVM TI safe-to-unsafe method inventory, raw-binding breaks, and
   a compile-checked migration fixture with documentation coverage assertions.

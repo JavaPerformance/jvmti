@@ -24,6 +24,11 @@ let class = jni.find_class_cstr(c"java/lang/String")?;
 let method = unsafe { jni.get_method_id_cstr(class, c"length", c"()I")? };
 ```
 
+JNI, JVM TI, and class-file strings are Java Modified UTF-8, not ordinary
+UTF-8. Version 3.0 validates that encoding. Use `mutf8::decode_utf16` or
+`JavaString::to_utf16` when unpaired Java surrogate code units must be
+preserved exactly.
+
 ## Who Must Read Which Sections
 
 | Consumer | Required sections |
@@ -92,7 +97,7 @@ fn on_load(&self, context: AgentLoadContext<'_>) -> jni::jint {
 ```
 
 `AgentLoadContext` preserves distinctions that 2.x erased: null versus empty
-options, invalid UTF-8, the exact `JavaVM*`, and the reserved pointer.
+options, malformed Java Modified UTF-8, the exact `JavaVM*`, and the reserved pointer.
 `on_attach` takes the same context type. `AgentUnloadContext` supplies the
 `JavaVM*` to `on_unload`:
 
@@ -110,12 +115,24 @@ callback that genuinely owns a live raw `JavaVM*` must use:
 let jvmti = unsafe { Jvmti::from_java_vm_raw(vm_ptr) }?;
 ```
 
+The JVM may call `Agent_OnAttach` again after the native library is already
+loaded. Version 3.0 constructs the process-global `Agent` once and invokes
+`on_attach` for every request. Existing attach initialization must be made
+idempotent and safe under concurrent calls; a second attach is not a second
+agent instance.
+
 ### Panic containment
 
 Version 3.0 catches unwinding at lifecycle and event FFI boundaries. The new
 defaulted `Agent::callback_panicked(&'static str)` hook reports which callback
 panicked. It must not panic and should avoid blocking or allocation because
 some callback phases severely restrict legal JVM operations.
+
+This containment applies only when Rust is configured to unwind. A crate built
+with `panic = "abort"` terminates the process immediately and cannot be caught.
+Production callbacks must therefore remain non-panicking regardless of panic
+strategy; containment is a last-resort process-safety boundary, not an
+error-handling mechanism.
 
 ## Event Callback Model
 
@@ -201,6 +218,10 @@ fn class_file_load_hook<'callback>(
 }
 ```
 
+The output is single-assignment. A second `set_transformed_class` call on the
+same callback event returns `JVMTI_ERROR_DUPLICATE` rather than overwriting and
+stranding the first JVM TI allocation.
+
 ### Mutable native binding
 
 `NativeMethodBindEvent::set_new_address` is unsafe because the replacement must
@@ -257,13 +278,72 @@ let owned = unsafe { LocalRef::from_raw(jni, raw) };
 
 This replaces `LocalRef::new`. The caller must prove that the reference belongs
 to the current JNI thread and local frame and that no other owner will delete
-it. `GlobalRef::new` also changed from safe to unsafe because it consumes a
-caller-supplied local reference and relies on its VM, thread, and lifetime
+it. `GlobalRef::new` also changed from safe to unsafe because it accepts a
+caller-supplied raw local handle and relies on its VM, thread, and lifetime
 invariants:
 
 ```rust,ignore
-let global = unsafe { GlobalRef::new(jni, raw_local) };
+let global = unsafe { GlobalRef::new(jni, raw_local) }?;
 ```
+
+Construction is fallible in 3.0. The VM handle is obtained before JNI creates
+the global reference, so a failed `GetJavaVM` cannot strand a reference that no
+destructor can release. `WeakGlobalRef::new` provides the same owning behavior
+for weak global references. Both guards provide `close()` when cleanup failure
+must be reported; `Drop` remains a best-effort fallback because Rust destructors
+cannot return a JNI status.
+
+## JNI Array And Critical Leases
+
+Version 3.0 completes the fixed-signature JNI wrapper surface while refusing to
+expose unmatched high-level native leases. Primitive array element access,
+primitive critical access, and string critical access return allocation-free
+RAII guards:
+
+```rust,ignore
+let mut values = unsafe { jni.get_int_array_elements(array) }
+    .expect("JVM returned array elements");
+values[0] = 42;
+values.close(); // copy back when needed and release exactly once
+```
+
+`PrimitiveArrayElements`, `PrimitiveArrayCritical`, and `StringCritical`
+release exactly once on drop. `commit()` writes back a copied primitive array
+while deliberately retaining the lease. `abort()` requests that copied storage
+not be written back, but cannot roll back writes when the JVM returned directly
+pinned storage. While a critical guard is live, obey JNI's prohibition on
+blocking and arbitrary JNI calls.
+
+`push_local_frame` now returns a `LocalFrame` that pops on drop and can promote
+one explicitly selected reference through `pop`. `monitor_enter` now returns a
+`JavaMonitorGuard` that exits on drop. Code intentionally managing either pair
+can use the unsafe `push_local_frame_raw`/`pop_local_frame_raw` and
+`monitor_enter_raw`/`monitor_exit_raw` escape hatches.
+
+The high-level API exposes all fixed-signature and `A`-form operations. C
+variadic and `va_list` table entries remain available only through `sys::jni`:
+stable Rust cannot construct or portably forward arbitrary C variadic argument
+lists, and JNI's `A` forms provide the portable typed alternative.
+
+## JVM TI Raw Monitor Ownership
+
+`Jvmti::create_raw_monitor` now returns an owning `RawMonitor`. Enter through
+`RawMonitor::enter` to obtain a `RawMonitorGuard` that exits on drop:
+
+```rust,ignore
+let monitor = jvmti.create_raw_monitor("agent-state")?;
+{
+    let entered = monitor.enter()?;
+    update_shared_state();
+    entered.notify_all()?;
+}
+monitor.close()?;
+```
+
+Use `close()` and `exit()` when the native release result matters. If either
+explicit operation fails, the value retains ownership and drop makes one
+best-effort retry. The raw monitor methods remain unsafe escape hatches for
+manual ownership.
 
 ## Raw-Handle Operations
 
@@ -388,6 +468,50 @@ signature changes that require more than an `unsafe` block are:
 - `set_jni_function_table` takes `*const JNINativeInterface_`, not
   `*const JNIEnv`.
 
+## Class-File String Fidelity
+
+`CpInfo::Utf8` now contains `JavaString`, not `String`. Ordinary Unicode values
+remain available through `JavaString::as_str`; exact Java strings, including
+unpaired UTF-16 surrogates, use `to_utf16` or `to_modified_utf8`:
+
+```rust,ignore
+let value = class_file.constant_pool.get_java_string(index)?;
+if let Some(text) = value.as_str() {
+    consume_unicode(text);
+} else {
+    consume_exact_utf16(&value.to_utf16());
+}
+```
+
+`ConstantPool::get_utf8` remains the scalar-Unicode convenience and now returns
+`ClassFileError::UnpairedSurrogate` rather than replacing an unrepresentable
+Java string.
+
+`ClassFile::parse` now applies conservative input-size, cumulative allocation,
+recursive attribute, and recursive annotation-nesting limits. Tools that need different bounds can use
+`ClassFile::parse_with_limits(bytes, ClassFileParseLimits::new()...)`. Limit
+failures are reported as `ClassFileError::LimitExceeded`; parser collection
+reservations are fallible and share one budget across nested attribute readers.
+
+## Embedded JVM Thread Lifetimes
+
+The manual embedding methods `JavaVm::get_env`,
+`JavaVm::attach_current_thread`,
+`JavaVm::attach_current_thread_as_daemon`, and
+`JavaVm::detach_current_thread` are unsafe in 3.0. A standalone `JniEnv` cannot
+encode that it must not outlive the VM, cross threads, or survive detachment.
+
+Prefer the safe lifetime-bound guard or closure APIs:
+
+```rust,ignore
+let guard = vm.attach_current_thread_guard()?;
+let env = guard.env();
+// `guard` prevents the attached environment from outliving `vm`.
+```
+
+Use the manual unsafe methods only when the caller can prove the same VM,
+thread, attachment, and destruction invariants externally.
+
 ## Other Public API Changes
 
 - `set_global_agent` now returns `Result<(), GlobalAgentAlreadySet>` instead of
@@ -401,6 +525,11 @@ signature changes that require more than an `unsafe` block are:
 - New wrapper and event types are `#[non_exhaustive]` where future JDK additions
   may extend them. Construct them through crate APIs and match public enums with
   a fallback arm.
+- Crate-produced metadata records such as `ThreadInfo`, `StackInfo`, extension
+  metadata, `ReleaseProfile`, and `ReleaseDelta` are also
+  `#[non_exhaustive]`. Their fields remain readable, but external code must not
+  construct or exhaustively destructure them; this reserves additive fields for
+  future JDK releases without another major-version break.
 
 ## Raw `sys` Binding Migration
 
@@ -422,10 +551,14 @@ apply the following changes.
 | Zero-argument `jvmtiExtensionEventCallback` | `Option<unsafe extern "C" fn(jvmtiEnv*, ...)>` | Use the exact vendor signature and treat registration/invocation as raw FFI |
 | `jvmtiExtensionFunctionInfo.func: *mut c_void` | `Option<jvmtiExtensionFunction>` | Handle the opaque variadic callable type explicitly |
 | Fixed `JvmtiSetEventNotificationModeFn` | Exact variadic `extern "C"` function type | Normal wrapper calls remain fixed-argument; raw extension calls must obey the vendor ABI |
+| Unsuffixed JNI variadic invocation slots represented as `*mut c_void` | 31 exact aliases beginning with `JniNewObjectFn` and covering `JniCall<Type>MethodFn` families | Prefer the `A` variants in high-level code; raw variadic calls must obey C default argument promotion and platform ABI rules |
+| One pointer-shaped Rust `va_list` alias on every platform | Target-aware C `va_list` argument representation, including by-value Linux AArch64 and ARM forms | Recompile raw `...V` table users for each target; prefer JNI `A` variants because stable Rust cannot construct or portably forward arbitrary C variadic arguments |
+| Non-null Rust function parameters for nullable JVM TI callback pointers | `Option<callback>` in `JvmtiRunAgentThreadFn` and deprecated heap iteration aliases including `JvmtiIterateOverHeapFn` | Pass `Some(callback)` for normal use or `None` only where the JVM TI contract permits null |
 | `JvmtiSuspendAllVirtualThreadsFn` and `JvmtiResumeAllVirtualThreadsFn` with only `jvmtiEnv*` | Adds `except_count` and `except_list` | Pass a valid list or `(0, null)` |
 | JNI-table APIs expressed through `JNIEnv` | APIs expressed through `JNINativeInterface_` | Remove the extra pointer indirection |
 | `JVMTI_HEAP_OBJECT_EITHER == 0` | Correct header value `3` | Remove any workaround for the old value |
-| JDK 27-sized `JNINativeInterface_` struct literals | JDK 28 tail including `HasIdentity` | Prefer `Default`/provided tables or initialize the new field explicitly |
+| Closed `jobjectRefType` enum | `#[repr(transparent)] jobjectRefType(c_uint)` | Compare against associated constants and retain an unknown fallback via `raw()` / `from_raw()` |
+| Struct literals for append-only JNI/JVM TI function or callback tables | `JNINativeInterface_`, `JNIInvokeInterface_`, `jvmtiInterface_1_`, and `jvmtiEventCallbacks` are non-exhaustive | Treat JNI invocation/native tables as VM-provided. For JVM TI test tables and callback tables, start with `Default` and assign the required public fields; do not exhaustively destructure a version-growing table. |
 
 ### Open error values
 
@@ -451,7 +584,7 @@ Safe wrappers also enforce gates before reading an appended table tail,
 reclaimed slot, or newly consumed capability bit.
 
 The 3.0 ABI is verified against pinned OpenJDK source/header snapshots for every
-feature release from JDK 8 through the current JDK 28 main-line snapshot. Real
+feature release from JDK 8 through the identified JDK 28 build 11 source. Real
 callback delivery has been exercised on installed JVMs through JDK 27. JDK 28
 value-object behavior remains preview work and requires the specialized live
 preview-runtime test before 3.0 publication; it is not described as final Java
@@ -476,7 +609,15 @@ cargo test --all-targets --all-features
 cargo clippy --all-targets --all-features -- -D warnings
 RUSTDOCFLAGS="-D warnings" cargo doc --all-features --no-deps
 scripts/check-jdk-abi.sh --all-releases
+scripts/check-pinned-jdk-abi.sh 28
+scripts/check-host-va-list-abi.sh
+scripts/check-wrapper-coverage.sh
+scripts/check-classfile-corpus.sh "$JAVA_HOME"
 scripts/prove-event-callback-matrix.sh
+scripts/prove-mutf8-live.sh
+scripts/prove-repeated-attach-live.sh
+scripts/prove-heap-graph-live.sh
+scripts/prove-callback-allocation-free.sh
 ```
 
 The repository test `tests/migration_3.rs` compiles all 34 canonical callback
@@ -484,6 +625,6 @@ signatures and representative ownership, open-error, and unsafe-handle
 migrations. It also checks that this guide retains the complete callback and
 safe-to-unsafe method inventories.
 
-The separate sanitizer-backed stack/timer/ownership checks and the live JDK 28
-value-object preview check remain publication gates as described in
-`ROADMAP_3_0_0_ABI_AND_CALLBACK_FIDELITY.md`.
+The complete release-candidate boundary, including cross-platform CI,
+external-consumer, package-content, and preview-runtime requirements, is in
+`DEFINITIVE_3_0_RELEASE_GATES.md`.

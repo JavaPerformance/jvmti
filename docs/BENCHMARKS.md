@@ -50,9 +50,10 @@ cargo run --release --bin jar_parse_bench -- /path/to/extracted/classes
 ```
 
 For a JAR input, the tool invokes the JDK `jar` executable found under
-`JAVA_HOME/bin` or on `PATH`, extracts into a unique temporary directory, then
-removes that directory on exit. Passing an already extracted directory removes
-archive-tool and decompression time from the parser measurement.
+`JAVA_HOME/bin` or on `PATH`, extracts into a unique directory under Cargo's
+`target/` tree, then removes that directory on exit. Passing an already
+extracted directory removes archive-tool and decompression time from the parser
+measurement.
 
 Output includes:
 
@@ -71,6 +72,26 @@ parse_mb_per_s=469.60
 Treat any non-zero `failed` count as a correctness failure before interpreting
 throughput. For apples-to-apples parser comparisons, pre-extract the JAR once
 and benchmark the directory so filesystem decompression does not dominate.
+
+### Full runtime corpus gate
+
+`scripts/check-classfile-corpus.sh` extracts complete modular runtime images
+with `jimage` (and uses `rt.jar` on JDK 8), then requires every class to parse:
+
+```bash
+scripts/check-classfile-corpus.sh \
+  /opt/openjdk-bin-8.492_p09 \
+  /opt/openjdk-bin-11.0.31_p11 \
+  /opt/openjdk-bin-17.0.19_p10 \
+  /opt/openjdk-bin-21.0.11_p10 \
+  /opt/openjdk-bin-25.0.3_p9 \
+  /opt/openjdk-bin-27_alpha20
+```
+
+The 2026-08-18 release-candidate run parsed 159,591 class files with zero
+failures. That count covers all modules in the installed JDK 11, 17, 21, 25,
+and 27 images plus JDK 8 `rt.jar`; it is correctness evidence for those exact
+runtimes, not a claim that arbitrary malformed inputs are valid.
 
 ## Performance-Sensitive JNI Calls
 
@@ -145,6 +166,22 @@ I/O must be measured separately.
 
 The first recorded reference run is documented in
 [Callback Dispatch Benchmark - 2026-08-17](CALLBACK_DISPATCH_BENCHMARK_2026-08-17.md).
+
+### Callback allocation proof
+
+The callback benchmark measures time; the separate counting-allocator agent
+proves whether normal Rust dispatch touches the Rust heap:
+
+```bash
+JAVA_HOME=/path/to/jdk scripts/prove-callback-allocation-free.sh
+```
+
+Counting starts only after agent construction, capability setup, callback
+registration, and event enablement. It remains active through entry into
+`VMDeath` and the script fails if it observes any allocation, reallocation, or
+deallocation. This proves the crate's normal dispatch path, not arbitrary code
+inside an application's callback and not allocations performed internally by
+the JVM.
 
 ## Regression Discipline
 

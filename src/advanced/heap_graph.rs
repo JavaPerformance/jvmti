@@ -9,11 +9,13 @@ use crate::sys::{jni, jvmti};
 use std::os::raw::c_void;
 use std::ptr;
 
+#[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct HeapGraph {
     pub edges: Vec<(jni::jlong, jni::jlong)>,
 }
 
+#[non_exhaustive]
 #[derive(Debug, Clone)]
 pub struct TagRange {
     pub start: jni::jlong,
@@ -31,7 +33,7 @@ unsafe extern "system" fn tag_all_objects_cb(
     _size: jni::jlong,
     tag_ptr: *mut jni::jlong,
     user_data: *mut c_void,
-) -> jni::jint {
+) -> jvmti::jvmtiIterationControl {
     if tag_ptr.is_null() || user_data.is_null() {
         return jvmti::JVMTI_ITERATION_CONTINUE;
     }
@@ -81,7 +83,7 @@ struct EdgeCollector {
 }
 
 unsafe extern "system" fn edge_collector_cb(
-    _reference_kind: jni::jint,
+    _reference_kind: jvmti::jvmtiHeapReferenceKind,
     _reference_info: *const jvmti::jvmtiHeapReferenceInfo,
     _class_tag: jni::jlong,
     _referrer_class_tag: jni::jlong,
@@ -92,7 +94,7 @@ unsafe extern "system" fn edge_collector_cb(
     user_data: *mut c_void,
 ) -> jni::jint {
     if user_data.is_null() || tag_ptr.is_null() || referrer_tag_ptr.is_null() {
-        return jvmti::JVMTI_ITERATION_CONTINUE;
+        return jvmti::JVMTI_VISIT_OBJECTS;
     }
     let target_tag = unsafe { *tag_ptr };
     let referrer_tag = unsafe { *referrer_tag_ptr };
@@ -100,7 +102,7 @@ unsafe extern "system" fn edge_collector_cb(
         let collector = unsafe { &mut *(user_data as *mut EdgeCollector) };
         collector.edges.push((referrer_tag, target_tag));
     }
-    jvmti::JVMTI_ITERATION_CONTINUE
+    jvmti::JVMTI_VISIT_OBJECTS
 }
 
 /// Builds a heap reference edge list using `FollowReferences`.
@@ -137,4 +139,42 @@ pub unsafe fn build_heap_graph(
     Ok(HeapGraph {
         edges: collector.edges,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn modern_reference_callback_requests_continued_object_visitation() {
+        let mut collector = EdgeCollector { edges: Vec::new() };
+        let mut target = 22;
+        let mut referrer = 11;
+        let result = unsafe {
+            edge_collector_cb(
+                jvmti::JVMTI_HEAP_REFERENCE_FIELD,
+                ptr::null(),
+                0,
+                0,
+                0,
+                &mut target,
+                &mut referrer,
+                0,
+                (&mut collector as *mut EdgeCollector).cast(),
+            )
+        };
+        assert_eq!(result, jvmti::JVMTI_VISIT_OBJECTS);
+        assert_eq!(collector.edges, [(11, 22)]);
+    }
+
+    #[test]
+    fn deprecated_iterator_keeps_its_distinct_continue_contract() {
+        let mut tag = 0;
+        let mut tagger = Tagger { next: 7, tagged: 0 };
+        let result =
+            unsafe { tag_all_objects_cb(0, 0, &mut tag, (&mut tagger as *mut Tagger).cast()) };
+        assert_eq!(result, jvmti::JVMTI_ITERATION_CONTINUE);
+        assert_eq!(tag, 7);
+        assert_eq!(tagger.tagged, 1);
+    }
 }

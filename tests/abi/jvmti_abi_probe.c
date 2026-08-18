@@ -52,6 +52,8 @@ int main(void) {
 
     PRINT_SIZE(jvmtiError);
     PRINT_ALIGN(jvmtiError);
+    PRINT_SIZE(jobjectRefType);
+    PRINT_ALIGN(jobjectRefType);
     PRINT_SIZE(jvmtiTimerInfo);
     PRINT_ALIGN(jvmtiTimerInfo);
     PRINT_OFFSET(jvmtiTimerInfo, kind);
@@ -98,10 +100,49 @@ int main(void) {
     PRINT_SIZE(jvmtiCapabilities);
     PRINT_ALIGN(jvmtiCapabilities);
     PRINT_CAPABILITY(can_tag_objects);
+    PRINT_CAPABILITY(can_generate_field_modification_events);
+    PRINT_CAPABILITY(can_generate_field_access_events);
+    PRINT_CAPABILITY(can_get_bytecodes);
+    PRINT_CAPABILITY(can_get_synthetic_attribute);
+    PRINT_CAPABILITY(can_get_owned_monitor_info);
+    PRINT_CAPABILITY(can_get_current_contended_monitor);
+    PRINT_CAPABILITY(can_get_monitor_info);
+    PRINT_CAPABILITY(can_pop_frame);
+    PRINT_CAPABILITY(can_redefine_classes);
+    PRINT_CAPABILITY(can_signal_thread);
+    PRINT_CAPABILITY(can_get_source_file_name);
+    PRINT_CAPABILITY(can_get_line_numbers);
+    PRINT_CAPABILITY(can_get_source_debug_extension);
+    PRINT_CAPABILITY(can_access_local_variables);
+    PRINT_CAPABILITY(can_maintain_original_method_order);
+    PRINT_CAPABILITY(can_generate_single_step_events);
+    PRINT_CAPABILITY(can_generate_exception_events);
+    PRINT_CAPABILITY(can_generate_frame_pop_events);
+    PRINT_CAPABILITY(can_generate_breakpoint_events);
+    PRINT_CAPABILITY(can_suspend);
+    PRINT_CAPABILITY(can_redefine_any_class);
+    PRINT_CAPABILITY(can_get_current_thread_cpu_time);
+    PRINT_CAPABILITY(can_get_thread_cpu_time);
     PRINT_CAPABILITY(can_generate_method_entry_events);
+    PRINT_CAPABILITY(can_generate_method_exit_events);
+    PRINT_CAPABILITY(can_generate_all_class_hook_events);
+    PRINT_CAPABILITY(can_generate_compiled_method_load_events);
+    PRINT_CAPABILITY(can_generate_monitor_events);
+    PRINT_CAPABILITY(can_generate_vm_object_alloc_events);
+    PRINT_CAPABILITY(can_generate_native_method_bind_events);
     PRINT_CAPABILITY(can_generate_garbage_collection_events);
+    PRINT_CAPABILITY(can_generate_object_free_events);
+    PRINT_CAPABILITY(can_force_early_return);
+    PRINT_CAPABILITY(can_get_owned_monitor_stack_depth_info);
+    PRINT_CAPABILITY(can_get_constant_pool);
+    PRINT_CAPABILITY(can_set_native_method_prefix);
+    PRINT_CAPABILITY(can_retransform_classes);
+    PRINT_CAPABILITY(can_retransform_any_class);
+    PRINT_CAPABILITY(can_generate_resource_exhaustion_heap_events);
+    PRINT_CAPABILITY(can_generate_resource_exhaustion_threads_events);
 #if PROBE_JDK_FEATURE >= 9
     PRINT_CAPABILITY(can_generate_early_vmstart);
+    PRINT_CAPABILITY(can_generate_early_class_hook_events);
 #endif
 #if PROBE_JDK_FEATURE >= 11
     PRINT_CAPABILITY(can_generate_sampled_object_alloc_events);

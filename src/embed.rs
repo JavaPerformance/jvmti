@@ -12,6 +12,7 @@ use crate::env::JniEnv;
 use crate::sys::jni;
 
 /// Errors returned by the embedding helpers.
+#[non_exhaustive]
 #[derive(Debug)]
 pub enum EmbedError {
     Nul(NulError),
@@ -180,7 +181,7 @@ impl JavaVmBuilder {
         self
     }
 
-    fn build_args(&mut self) -> (jni::JavaVMInitArgs, Vec<jni::JavaVMOption>) {
+    fn build_args(&mut self) -> Result<(jni::JavaVMInitArgs, Vec<jni::JavaVMOption>), jni::jint> {
         let mut opt_structs: Vec<jni::JavaVMOption> = self
             .options
             .iter_mut()
@@ -197,7 +198,7 @@ impl JavaVmBuilder {
         // which the all-zero representation is valid.
         let mut args: jni::JavaVMInitArgs = unsafe { std::mem::zeroed() };
         args.version = self.version;
-        args.nOptions = opt_structs.len() as jni::jint;
+        args.nOptions = jni::jint::try_from(opt_structs.len()).map_err(|_| jni::JNI_EINVAL)?;
         args.options = if opt_structs.is_empty() {
             ptr::null_mut()
         } else {
@@ -205,7 +206,7 @@ impl JavaVmBuilder {
         };
         args.ignoreUnrecognized = if self.ignore_unrecognized { 1 } else { 0 };
 
-        (args, opt_structs)
+        Ok((args, opt_structs))
     }
 
     /// Create a JVM using a raw `JNI_CreateJavaVM` function pointer.
@@ -215,7 +216,7 @@ impl JavaVmBuilder {
     /// shared library remains loaded for the lifetime of the returned `JavaVm`.
     pub unsafe fn create_with(self, create: jni::JNI_CreateJavaVM) -> Result<JavaVm, jni::jint> {
         let mut this = self;
-        let (mut args, option_structs) = this.build_args();
+        let (mut args, option_structs) = this.build_args()?;
 
         let mut vm: *mut jni::JavaVM = ptr::null_mut();
         let mut env: *mut jni::JNIEnv = ptr::null_mut();
@@ -233,7 +234,7 @@ impl JavaVmBuilder {
         Ok(JavaVm {
             vm,
             creator_env: env,
-            destroyed: false,
+            destroy_on_drop: true,
             _options: this.options,
             _option_structs: option_structs,
             _lib: None,
@@ -303,7 +304,9 @@ impl AttachedThread<'_> {
 impl Drop for AttachedThread<'_> {
     fn drop(&mut self) {
         if self.detach_on_drop {
-            let _ = self.vm.detach_current_thread();
+            // SAFETY: this guard owns the only `JniEnv` produced by the attach
+            // operation and drops it immediately after detaching.
+            let _ = unsafe { self.vm.detach_current_thread() };
         }
     }
 }
@@ -314,7 +317,7 @@ impl Drop for AttachedThread<'_> {
 pub struct JavaVm {
     vm: *mut jni::JavaVM,
     creator_env: *mut jni::JNIEnv,
-    destroyed: bool,
+    destroy_on_drop: bool,
     // Some JVM implementations continue to observe invocation-option storage
     // during startup after `JNI_CreateJavaVM` returns. Keep both the strings
     // and the pointer-bearing C array alive until after VM destruction.
@@ -330,6 +333,18 @@ unsafe impl Send for JavaVm {}
 unsafe impl Sync for JavaVm {}
 
 impl JavaVm {
+    fn preserve_support_for_live_vm(&mut self) {
+        // A failed DestroyJavaVM means native code may still execute from the
+        // loaded library and a JVM implementation may still retain option
+        // pointers. Leaking this small support state is the only sound
+        // fallback; unloading or freeing it could invalidate a live VM.
+        std::mem::forget(std::mem::take(&mut self._options));
+        std::mem::forget(std::mem::take(&mut self._option_structs));
+        if let Some(library) = self._lib.take() {
+            std::mem::forget(library);
+        }
+    }
+
     /// Return the raw `JavaVM*` pointer.
     pub fn java_vm_ptr(&self) -> *mut jni::JavaVM {
         self.vm
@@ -349,7 +364,13 @@ impl JavaVm {
     }
 
     /// Return the current thread's `JNIEnv*` if this thread is already attached.
-    pub fn get_env(&self, version: jni::jint) -> Result<JniEnv, jni::jint> {
+    ///
+    /// # Safety
+    ///
+    /// The returned wrapper must not outlive this VM, cross threads, or remain
+    /// usable after the current thread is detached. Prefer
+    /// [`Self::attach_current_thread_guard`] for a lifetime-bound wrapper.
+    pub unsafe fn get_env(&self, version: jni::jint) -> Result<JniEnv, jni::jint> {
         let mut env_ptr: *mut std::os::raw::c_void = ptr::null_mut();
         let res = unsafe { crate::jvm_call!(self.vm, GetEnv, &mut env_ptr, version) };
         if res != jni::JNI_OK {
@@ -389,7 +410,12 @@ impl JavaVm {
     /// If this native thread was not already attached, the caller is
     /// responsible for later calling [`JavaVm::detach_current_thread`].
     /// Prefer [`JavaVm::attach_current_thread_guard`] when possible.
-    pub fn attach_current_thread(&self) -> Result<JniEnv, jni::jint> {
+    ///
+    /// # Safety
+    ///
+    /// The returned wrapper must not outlive this VM or the attachment, and no
+    /// JNI operation may use it after [`Self::detach_current_thread`].
+    pub unsafe fn attach_current_thread(&self) -> Result<JniEnv, jni::jint> {
         self.attach_current_thread_inner(false)
     }
 
@@ -398,7 +424,12 @@ impl JavaVm {
     /// If this native thread was not already attached, the caller is
     /// responsible for later calling [`JavaVm::detach_current_thread`].
     /// Prefer [`JavaVm::attach_current_thread_as_daemon_guard`] when possible.
-    pub fn attach_current_thread_as_daemon(&self) -> Result<JniEnv, jni::jint> {
+    ///
+    /// # Safety
+    ///
+    /// The returned wrapper must not outlive this VM or the attachment, and no
+    /// JNI operation may use it after [`Self::detach_current_thread`].
+    pub unsafe fn attach_current_thread_as_daemon(&self) -> Result<JniEnv, jni::jint> {
         self.attach_current_thread_inner(true)
     }
 
@@ -406,7 +437,9 @@ impl JavaVm {
         &self,
         daemon: bool,
     ) -> Result<AttachedThread<'_>, jni::jint> {
-        match self.get_env(jni::JNI_VERSION_1_8) {
+        // SAFETY: the result is immediately placed in a guard borrowing this
+        // VM, which prevents it from outliving the VM or an owned attachment.
+        match unsafe { self.get_env(jni::JNI_VERSION_1_8) } {
             Ok(env) => Ok(AttachedThread {
                 vm: self,
                 env,
@@ -461,7 +494,13 @@ impl JavaVm {
     }
 
     /// Detach the current thread from the JVM.
-    pub fn detach_current_thread(&self) -> Result<(), jni::jint> {
+    ///
+    /// # Safety
+    ///
+    /// No `JniEnv`, local reference, or JNI operation tied to the current
+    /// attachment may be used after this call. Do not call this while an
+    /// [`AttachedThread`] guard is live.
+    pub unsafe fn detach_current_thread(&self) -> Result<(), jni::jint> {
         let res = unsafe { crate::jvm_call!(self.vm, DetachCurrentThread) };
         if res != jni::JNI_OK {
             return Err(res);
@@ -470,26 +509,46 @@ impl JavaVm {
     }
 
     /// Destroy the JVM (explicit shutdown).
+    ///
+    /// This may block until all non-daemon threads have terminated. If the VM
+    /// rejects shutdown, support storage is intentionally leaked so a live VM
+    /// is never left referring to freed options or an unloaded `libjvm`.
     pub fn destroy(mut self) -> Result<(), jni::jint> {
         let res = unsafe { crate::jvm_call!(self.vm, DestroyJavaVM) };
         if res != jni::JNI_OK {
+            self.preserve_support_for_live_vm();
+            self.destroy_on_drop = false;
             return Err(res);
         }
-        self.destroyed = true;
+        self.destroy_on_drop = false;
         Ok(())
+    }
+
+    /// Transfer the live JVM pointer without attempting shutdown.
+    ///
+    /// This deliberately leaks the owned dynamic-library handle and retained
+    /// startup options. It is appropriate only when another subsystem assumes
+    /// responsibility for the process-lifetime JVM. The returned pointer must
+    /// be used according to the JNI Invocation API.
+    pub fn into_raw(self) -> *mut jni::JavaVM {
+        let vm = self.vm;
+        std::mem::forget(self);
+        vm
     }
 }
 
 impl Drop for JavaVm {
     fn drop(&mut self) {
-        if self.destroyed {
+        if !self.destroy_on_drop {
             return;
         }
         if !self.vm.is_null() {
-            unsafe {
-                let _ = crate::jvm_call!(self.vm, DestroyJavaVM);
+            let result = unsafe { crate::jvm_call!(self.vm, DestroyJavaVM) };
+            if result != jni::JNI_OK {
+                self.preserve_support_for_live_vm();
             }
         }
+        self.destroy_on_drop = false;
     }
 }
 
@@ -497,16 +556,80 @@ impl Drop for JavaVm {
 mod tests {
     use super::*;
     use std::ptr::NonNull;
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
+
+    static DESTROY_CALLS: AtomicUsize = AtomicUsize::new(0);
+    static CREATE_VM: AtomicPtr<jni::JavaVM> = AtomicPtr::new(ptr::null_mut());
+    static DESTROY_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    unsafe extern "system" fn succeed_destroy(_vm: *mut jni::JavaVM) -> jni::jint {
+        DESTROY_CALLS.fetch_add(1, Ordering::SeqCst);
+        jni::JNI_OK
+    }
+
+    unsafe extern "system" fn fail_destroy(_vm: *mut jni::JavaVM) -> jni::jint {
+        DESTROY_CALLS.fetch_add(1, Ordering::SeqCst);
+        jni::JNI_ERR
+    }
+
+    unsafe extern "system" fn fail_attach(
+        _vm: *mut jni::JavaVM,
+        _env: *mut *mut std::ffi::c_void,
+        _args: *mut std::ffi::c_void,
+    ) -> jni::jint {
+        jni::JNI_ERR
+    }
+
+    unsafe extern "system" fn fail_detach(_vm: *mut jni::JavaVM) -> jni::jint {
+        jni::JNI_ERR
+    }
+
+    unsafe extern "system" fn fail_get_env(
+        _vm: *mut jni::JavaVM,
+        _env: *mut *mut std::ffi::c_void,
+        _version: jni::jint,
+    ) -> jni::jint {
+        jni::JNI_ERR
+    }
+
+    fn failing_destroy_vm() -> (JavaVm, *mut jni::JavaVM, Box<jni::JNIInvokeInterface_>) {
+        let table = Box::new(jni::JNIInvokeInterface_ {
+            reserved0: ptr::null_mut(),
+            reserved1: ptr::null_mut(),
+            reserved2: ptr::null_mut(),
+            DestroyJavaVM: fail_destroy,
+            AttachCurrentThread: fail_attach,
+            DetachCurrentThread: fail_detach,
+            GetEnv: fail_get_env,
+            AttachCurrentThreadAsDaemon: fail_attach,
+        });
+        let vm_slot = Box::into_raw(Box::new((&*table) as *const jni::JNIInvokeInterface_));
+        (
+            JavaVm {
+                vm: vm_slot,
+                creator_env: ptr::null_mut(),
+                destroy_on_drop: true,
+                _options: Vec::new(),
+                _option_structs: Vec::new(),
+                _lib: None,
+            },
+            vm_slot,
+            table,
+        )
+    }
 
     unsafe extern "system" fn fake_create(
         vm: *mut *mut jni::JavaVM,
         env: *mut *mut jni::JNIEnv,
         _args: *mut jni::JavaVMInitArgs,
     ) -> jni::jint {
-        // The test forgets the resulting handle, so these non-null sentinels
-        // are never dereferenced or passed to a JVM operation.
+        let configured_vm = CREATE_VM.load(Ordering::SeqCst);
+        if configured_vm.is_null() {
+            return jni::JNI_ERR;
+        }
         unsafe {
-            *vm = NonNull::<jni::JavaVM>::dangling().as_ptr();
+            *vm = configured_vm;
             *env = NonNull::<jni::JNIEnv>::dangling().as_ptr();
         }
         jni::JNI_OK
@@ -514,11 +637,27 @@ mod tests {
 
     #[test]
     fn invocation_options_live_with_the_vm_handle() {
+        let _guard = DESTROY_TEST_LOCK.lock().expect("destroy test lock");
+        DESTROY_CALLS.store(0, Ordering::SeqCst);
+
+        let table = Box::new(jni::JNIInvokeInterface_ {
+            reserved0: ptr::null_mut(),
+            reserved1: ptr::null_mut(),
+            reserved2: ptr::null_mut(),
+            DestroyJavaVM: succeed_destroy,
+            AttachCurrentThread: fail_attach,
+            DetachCurrentThread: fail_detach,
+            GetEnv: fail_get_env,
+            AttachCurrentThreadAsDaemon: fail_attach,
+        });
+        let vm_slot = Box::into_raw(Box::new((&*table) as *const jni::JNIInvokeInterface_));
+        CREATE_VM.store(vm_slot, Ordering::SeqCst);
+
         let builder = JavaVmBuilder::default()
             .option("-Djvmti.bindings.option-lifetime=sentinel")
             .expect("valid option");
-        // SAFETY: `fake_create` initializes non-null sentinel outputs and the
-        // resulting handle is forgotten before any VM operation or drop.
+        // SAFETY: `fake_create` returns the valid test invocation table above,
+        // which remains alive through the successful destroy operation.
         let vm = unsafe { builder.create_with(fake_create) }.expect("fake JVM creation");
 
         assert_eq!(vm._options.len(), 1);
@@ -532,6 +671,40 @@ mod tests {
             vm._options[0].as_ptr()
         );
 
-        std::mem::forget(vm);
+        drop(vm);
+        assert_eq!(DESTROY_CALLS.load(Ordering::SeqCst), 1);
+        CREATE_VM.store(ptr::null_mut(), Ordering::SeqCst);
+
+        // SAFETY: `vm_slot` came from Box::into_raw and the JavaVm has already
+        // called the test destroy function, so neither allocation is borrowed.
+        drop(unsafe { Box::from_raw(vm_slot) });
+        drop(table);
+    }
+
+    #[test]
+    fn failed_explicit_destroy_is_not_retried_by_drop() {
+        let _guard = DESTROY_TEST_LOCK.lock().expect("destroy test lock");
+        DESTROY_CALLS.store(0, Ordering::SeqCst);
+        let (vm, vm_slot, table) = failing_destroy_vm();
+        assert_eq!(vm.destroy(), Err(jni::JNI_ERR));
+        assert_eq!(DESTROY_CALLS.load(Ordering::SeqCst), 1);
+
+        // SAFETY: `vm_slot` came from Box::into_raw above, and the disarmed
+        // JavaVm no longer refers to it after the consuming destroy call.
+        drop(unsafe { Box::from_raw(vm_slot) });
+        drop(table);
+    }
+
+    #[test]
+    fn failed_drop_attempts_destroy_once() {
+        let _guard = DESTROY_TEST_LOCK.lock().expect("destroy test lock");
+        DESTROY_CALLS.store(0, Ordering::SeqCst);
+        let (vm, vm_slot, table) = failing_destroy_vm();
+        drop(vm);
+        assert_eq!(DESTROY_CALLS.load(Ordering::SeqCst), 1);
+
+        // SAFETY: `vm_slot` came from Box::into_raw above and no JavaVm remains.
+        drop(unsafe { Box::from_raw(vm_slot) });
+        drop(table);
     }
 }

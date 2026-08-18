@@ -15,7 +15,7 @@
 //! - **Zero Third-Party Crates**: Including optional features, tests, tools, and benchmarks
 //! - **Ergonomic API**: High-level wrappers handle strings, arrays, references
 //! - **Type-Safe**: Proper Rust types, `Result` returns, RAII guards
-//! - **JDK 8-28 Compatible**: ABI-verified against OpenJDK 8 through current JDK 28 headers
+//! - **Release-Aware**: source-ABI verified against pinned OpenJDK 8-28 revisions and live callback-tested through JDK 27
 //!
 //! ## Quick Start
 //!
@@ -36,7 +36,7 @@
 //! ```
 //!
 //! **3. Implement your agent (src/lib.rs):**
-//! ```rust,ignore
+//! ```rust,no_run
 //! use jvmti_bindings::prelude::*;
 //!
 //! #[derive(Default)]
@@ -81,7 +81,7 @@
 //! │              High-Level Wrappers (env module)            │
 //! │   env::Jvmti - JVMTI operations with Result returns      │
 //! │   env::JniEnv - JNI operations with string helpers       │
-//! │   env::LocalRef, GlobalRef - RAII reference guards       │
+//! │   env::LocalRef, GlobalRef, WeakGlobalRef - RAII guards  │
 //! ├─────────────────────────────────────────────────────────┤
 //! │              Raw FFI Bindings (sys module)               │
 //! │   sys::jni - JNI types, JDK 28 vtable                    │
@@ -99,6 +99,7 @@
 //! | [`env::Jvmti`] | JVMTI environment wrapper (153 methods) |
 //! | [`env::JniEnv`] | JNI environment wrapper (60+ methods) |
 //! | [`classfile`] | Class file parser with all Java 8-27 attributes |
+//! | [`mutf8`] | Java Modified UTF-8 and exact UTF-16 conversions |
 //! | [`prelude`] | Recommended imports for agents |
 //! | [`embed`] | Optional JVM embedding helpers (`embed` feature) |
 //! | [`advanced`] | Feature-gated advanced helpers (heap graph utilities) |
@@ -110,7 +111,7 @@
 //! 2. Set up event callbacks
 //! 3. Enable the specific events
 //!
-//! ```rust,ignore
+//! ```rust,no_run
 //! use jvmti_bindings::prelude::*;
 //!
 //! #[derive(Default)]
@@ -118,23 +119,31 @@
 //!
 //! impl Agent for ClassMonitor {
 //!     fn on_load(&self, context: AgentLoadContext<'_>) -> jni::jint {
-//!         let jvmti_env = context.vm().jvmti().expect("Failed to get JVMTI");
+//!         let Ok(jvmti_env) = context.vm().jvmti() else {
+//!             return jni::JNI_ERR;
+//!         };
 //!
 //!         // 1. Request capabilities
 //!         let mut caps = jvmti::jvmtiCapabilities::default();
 //!         caps.set_can_generate_all_class_hook_events(true);
-//!         jvmti_env.add_capabilities(&caps).expect("capabilities");
+//!         if jvmti_env.add_capabilities(&caps).is_err() {
+//!             return jni::JNI_ERR;
+//!         }
 //!
 //!         // 2. Set up callbacks (wires all events to your Agent impl)
 //!         let callbacks = get_default_callbacks();
-//!         jvmti_env.set_event_callbacks(callbacks).expect("callbacks");
+//!         if jvmti_env.set_event_callbacks(callbacks).is_err() {
+//!             return jni::JNI_ERR;
+//!         }
 //!
 //!         // 3. Enable specific events
-//!         jvmti_env.set_event_notification_mode(
+//!         if unsafe { jvmti_env.set_event_notification_mode(
 //!             true,  // enable
 //!             jvmti::JVMTI_EVENT_CLASS_FILE_LOAD_HOOK,
 //!             std::ptr::null_mut()  // all threads
-//!         ).expect("enable event");
+//!         ) }.is_err() {
+//!             return jni::JNI_ERR;
+//!         }
 //!
 //!         jni::JNI_OK
 //!     }
@@ -155,26 +164,39 @@
 //!
 //! Use [`env::JniEnv`] for ergonomic JNI operations:
 //!
-//! ```rust,ignore
+//! ```rust,no_run
 //! use jvmti_bindings::prelude::*;
 //!
-//! fn vm_init(&self, context: CallbackContext<'_>, _event: ThreadEvent) {
-//!     let jni = context.jni().expect("VMInit supplies JNI");
+//! fn print_message(jni: &JniEnv) {
 //!
 //!     // Find a class
-//!     let system_class = jni.find_class("java/lang/System").unwrap();
+//!     let Some(system_class) = jni.find_class("java/lang/System") else {
+//!         return;
+//!     };
 //!
 //!     // Get a static field
-//!     let out_field = jni.get_static_field_id(system_class, "out", "Ljava/io/PrintStream;").unwrap();
-//!     let out = jni.get_static_object_field(system_class, out_field);
+//!     let Some(out_field) = (unsafe {
+//!         jni.get_static_field_id(system_class, "out", "Ljava/io/PrintStream;")
+//!     }) else {
+//!         return;
+//!     };
+//!     let out = unsafe { jni.get_static_object_field(system_class, out_field) };
 //!
 //!     // Create a Java string
-//!     let message = jni.new_string_utf("Hello from Rust!").unwrap();
+//!     let Some(message) = jni.new_string_utf("Hello from Rust!") else {
+//!         return;
+//!     };
 //!
 //!     // Call a method
-//!     let print_class = jni.find_class("java/io/PrintStream").unwrap();
-//!     let println_method = jni.get_method_id(print_class, "println", "(Ljava/lang/String;)V").unwrap();
-//!     jni.call_void_method(out, println_method, &[jni::jvalue { l: message }]);
+//!     let Some(print_class) = jni.find_class("java/io/PrintStream") else {
+//!         return;
+//!     };
+//!     let Some(println_method) = (unsafe {
+//!         jni.get_method_id(print_class, "println", "(Ljava/lang/String;)V")
+//!     }) else {
+//!         return;
+//!     };
+//!     unsafe { jni.call_void_method(out, println_method, &[jni::jvalue { l: message }]) };
 //!
 //!     // Check for exceptions
 //!     if jni.exception_check() {
@@ -205,6 +227,7 @@ mod dynamic_library;
 #[cfg(feature = "embed")]
 pub mod embed;
 pub mod env;
+pub mod mutf8;
 pub mod prelude;
 pub mod sys;
 pub mod version;
@@ -239,7 +262,7 @@ pub fn describe_jni_result(code: jni::jint) -> String {
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// ```rust,no_run
 /// use jvmti_bindings::prelude::*;
 ///
 /// #[derive(Default)]
@@ -483,6 +506,13 @@ pub fn set_global_agent(agent: Box<dyn Agent>) -> Result<(), GlobalAgentAlreadyS
     GLOBAL_AGENT.set(agent).map_err(|_| GlobalAgentAlreadySet)
 }
 
+fn global_agent_or_init<A>() -> &'static dyn Agent
+where
+    A: Agent + Default + 'static,
+{
+    GLOBAL_AGENT.get_or_init(|| Box::new(A::default())).as_ref()
+}
+
 #[doc(hidden)]
 pub unsafe fn __agent_on_load<A>(
     vm: *mut jni::JavaVM,
@@ -495,11 +525,7 @@ where
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let context = unsafe { agent::AgentLoadContext::from_raw(vm, options, reserved) }
             .ok_or(jni::JNI_ERR)?;
-        set_global_agent(Box::new(A::default())).map_err(|_| jni::JNI_ERR)?;
-        GLOBAL_AGENT
-            .get()
-            .map(|agent| agent.on_load(context))
-            .ok_or(jni::JNI_ERR)
+        Ok(global_agent_or_init::<A>().on_load(context))
     }));
 
     match outcome {
@@ -528,11 +554,10 @@ where
     let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let context = unsafe { agent::AgentLoadContext::from_raw(vm, options, reserved) }
             .ok_or(jni::JNI_ERR)?;
-        set_global_agent(Box::new(A::default())).map_err(|_| jni::JNI_ERR)?;
-        GLOBAL_AGENT
-            .get()
-            .map(|agent| agent.on_attach(context))
-            .ok_or(jni::JNI_ERR)
+        // The Attach API invokes Agent_OnAttach even when this library was
+        // already loaded. Reuse the process-global agent rather than rejecting
+        // every attach after the first one.
+        Ok(global_agent_or_init::<A>().on_attach(context))
     }));
 
     match outcome {
@@ -1098,22 +1123,35 @@ unsafe extern "system" fn trampoline_sampled_object_alloc(
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// ```rust,no_run
+/// use jvmti_bindings::prelude::*;
+///
+/// #[derive(Default)]
+/// struct LifecycleAgent;
+///
+/// impl Agent for LifecycleAgent {
 /// fn on_load(&self, context: AgentLoadContext<'_>) -> jni::jint {
-///     let jvmti = context.vm().jvmti().unwrap();
+///     let Ok(jvmti) = context.vm().jvmti() else {
+///         return jni::JNI_ERR;
+///     };
 ///
 ///     // Wire up all event callbacks
 ///     let callbacks = get_default_callbacks();
-///     jvmti.set_event_callbacks(callbacks).unwrap();
+///     if jvmti.set_event_callbacks(callbacks).is_err() {
+///         return jni::JNI_ERR;
+///     }
 ///
 ///     // Enable specific events you care about
-///     jvmti.set_event_notification_mode(
+///     if unsafe { jvmti.set_event_notification_mode(
 ///         true,
 ///         jvmti::JVMTI_EVENT_VM_INIT,
 ///         std::ptr::null_mut(),
-///     ).unwrap();
+///     ) }.is_err() {
+///         return jni::JNI_ERR;
+///     }
 ///
 ///     jni::JNI_OK
+/// }
 /// }
 /// ```
 ///
@@ -1173,8 +1211,8 @@ pub fn get_default_callbacks() -> jvmti::jvmtiEventCallbacks {
 
 /// Exports your agent type as a loadable JVMTI agent library.
 ///
-/// This macro generates the required `Agent_OnLoad` and `Agent_OnUnload` FFI entry points
-/// that the JVM expects when loading an agent via `-agentpath` or `-agentlib`.
+/// This macro generates the required `Agent_OnLoad`, `Agent_OnAttach`, and
+/// `Agent_OnUnload` FFI entry points used for startup and dynamic agent loading.
 ///
 /// # Requirements
 ///
@@ -1185,17 +1223,20 @@ pub fn get_default_callbacks() -> jvmti::jvmtiEventCallbacks {
 ///
 /// # Generated Functions
 ///
-/// The macro generates two `extern "system"` functions:
+/// The macro generates three `extern "system"` functions:
 ///
 /// - **`Agent_OnLoad`**: Called by the JVM when the agent is loaded. Creates your agent
 ///   instance, registers it globally, and calls your [`Agent::on_load`] method.
+///
+/// - **`Agent_OnAttach`**: Called for each successful dynamic attach request. Reuses the
+///   process-global agent and calls [`Agent::on_attach`] with that request's exact context.
 ///
 /// - **`Agent_OnUnload`**: Called by the JVM during shutdown. Calls your [`Agent::on_unload`]
 ///   method for cleanup.
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// ```rust,no_run
 /// use jvmti_bindings::prelude::*;
 ///
 /// #[derive(Default)]

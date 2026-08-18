@@ -73,7 +73,15 @@ fn unique_temp_dir() -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos();
-    env::temp_dir().join(format!("jvmti-jar-bench-{}-{nonce}", std::process::id()))
+    let root = env::var_os("JVMTI_BENCH_SCRATCH")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            env::current_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join("target")
+                .join("jvmti-bench-scratch")
+        });
+    root.join(format!("jvmti-jar-bench-{}-{nonce}", std::process::id()))
 }
 
 fn class_files(root: &Path) -> Result<Vec<PathBuf>, std::io::Error> {
@@ -97,22 +105,31 @@ fn class_files(root: &Path) -> Result<Vec<PathBuf>, std::io::Error> {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let input = env::args()
-        .nth(1)
-        .expect("usage: jar_parse_bench JAR_OR_CLASS_DIRECTORY");
+    let input = env::args().nth(1).ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "usage: jar_parse_bench JAR_JMOD_OR_CLASS_DIRECTORY",
+        )
+    })?;
     let prepared = PreparedInput::prepare(Path::new(&input))?;
     let classes = class_files(&prepared.root)?;
 
     let mut total_bytes: u64 = 0;
     let mut parsed: u64 = 0;
     let mut failed: u64 = 0;
+    let mut failures = Vec::new();
     let start = Instant::now();
     for path in &classes {
         let bytes = fs::read(path)?;
         total_bytes += bytes.len() as u64;
         match jvmti_bindings::classfile::ClassFile::parse(&bytes) {
             Ok(_) => parsed += 1,
-            Err(_) => failed += 1,
+            Err(error) => {
+                failed += 1;
+                if failures.len() < 10 {
+                    failures.push(format!("{}: {error}", path.display()));
+                }
+            }
         }
     }
     let parse_time = start.elapsed();
@@ -143,6 +160,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("total_time_ms={:.3}", total_time.as_secs_f64() * 1_000.0);
     println!("ns_per_class={ns_per_class:.1}");
     println!("parse_mb_per_s={mb_per_second:.2}");
+
+    if failed != 0 {
+        for failure in failures {
+            eprintln!("parse_failure={failure}");
+        }
+        return Err(format!("failed to parse {failed} of {} class files", classes.len()).into());
+    }
 
     Ok(())
 }

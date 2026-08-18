@@ -3,10 +3,10 @@ use jvmti_bindings::prelude::*;
 #[derive(Default)]
 struct MyAgent;
 
-impl Agent for MyAgent {
-    fn on_load(&self, context: AgentLoadContext<'_>) -> jni::jint {
+impl MyAgent {
+    fn initialize(&self, context: AgentLoadContext<'_>, entry_point: &str) -> jni::jint {
         eprintln!(
-            "[agent] on_load: {}",
+            "[agent] {entry_point}: {}",
             context.options_lossy().as_deref().unwrap_or("")
         );
 
@@ -37,16 +37,24 @@ impl Agent for MyAgent {
 
         jni::JNI_OK
     }
+}
+
+impl Agent for MyAgent {
+    fn on_load(&self, context: AgentLoadContext<'_>) -> jni::jint {
+        self.initialize(context, "on_load")
+    }
+
+    fn on_attach(&self, context: AgentLoadContext<'_>) -> jni::jint {
+        self.initialize(context, "on_attach")
+    }
 
     fn class_file_load_hook(
         &self,
         _context: CallbackContext<'_>,
         event: ClassFileLoadHookEvent<'_>,
     ) {
-        let class_name = event
-            .name()
-            .and_then(|name| name.to_str().ok())
-            .unwrap_or("<unknown>");
+        let decoded_name = event.name_str().ok().flatten();
+        let class_name = decoded_name.as_deref().unwrap_or("<unknown>");
 
         eprintln!(
             "[agent] Loaded: {} ({} bytes)",

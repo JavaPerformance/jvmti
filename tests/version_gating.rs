@@ -16,6 +16,7 @@ static JNI_CALLS: AtomicUsize = AtomicUsize::new(0);
 static JVMTI_CALLS: AtomicUsize = AtomicUsize::new(0);
 static JVMTI_VERSION: AtomicI32 = AtomicI32::new(jvmti::JVMTI_VERSION_1_2);
 static CALLBACK_TABLE_SIZE: AtomicI32 = AtomicI32::new(0);
+static JNI_TEST_LOCK: Mutex<()> = Mutex::new(());
 static JVMTI_TEST_LOCK: Mutex<()> = Mutex::new(());
 
 unsafe extern "system" fn jni_version_8(_env: *mut jni::JNIEnv) -> jni::jint {
@@ -78,6 +79,7 @@ fn mock_jni_env(
 
 #[test]
 fn every_jni_tail_operation_is_gated_before_its_slot_is_used() {
+    let _guard = JNI_TEST_LOCK.lock().unwrap();
     JNI_CALLS.store(0, Ordering::Relaxed);
     let (slots, mut raw_env) = mock_jni_env(jni_version_8);
     let env = unsafe { JniEnv::from_raw(&mut raw_env) };
@@ -114,6 +116,7 @@ fn every_jni_tail_operation_is_gated_before_its_slot_is_used() {
 
 #[test]
 fn each_jni_tail_operation_works_at_its_introducing_release() {
+    let _guard = JNI_TEST_LOCK.lock().unwrap();
     JNI_CALLS.store(0, Ordering::Relaxed);
 
     let (slots9, mut raw9) = mock_jni_env(jni_version_9);

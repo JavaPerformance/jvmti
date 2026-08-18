@@ -31,7 +31,7 @@ impl Agent for ClassLogger {
         println!("[ClassLogger] Starting class logger...");
 
         // Parse filter from options (e.g., "filter=com/example")
-        let options = context.options_str().ok().flatten().unwrap_or("");
+        let options = context.options_str().ok().flatten().unwrap_or_default();
         let filter: Option<&str> = options
             .split(',')
             .find(|s| s.starts_with("filter="))
@@ -85,15 +85,12 @@ impl Agent for ClassLogger {
         self.classes_loaded.fetch_add(1, Ordering::Relaxed);
 
         // Get class name (may be null for some system classes)
-        let class_name = event
-            .name()
-            .and_then(|name| name.to_str().ok())
-            .unwrap_or("<unknown>");
+        let class_name = event.name_str().ok().flatten();
 
         // Log the class load
         println!(
             "[ClassLogger] Loaded: {} ({} bytes)",
-            class_name,
+            class_name.as_deref().unwrap_or("<unknown>"),
             event.class_data().len()
         );
 

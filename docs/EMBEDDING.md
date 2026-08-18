@@ -17,6 +17,7 @@ Rust 1.85 or newer is required.
 ## Minimal Example
 
 ```rust,ignore
+use std::io;
 use jvmti_bindings::prelude::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -30,16 +31,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Only valid on the creating thread.
     let env = unsafe { vm.creator_env() };
-    let system = env.find_class_cstr(c"java/lang/System").unwrap();
+    let system = env
+        .find_class_cstr(c"java/lang/System")
+        .ok_or_else(|| io::Error::other("java.lang.System was not found"))?;
     let get_prop = unsafe {
         env.get_static_method_id_cstr(
             system,
             c"getProperty",
             c"(Ljava/lang/String;)Ljava/lang/String;",
         )
-        .unwrap()
+        .ok_or_else(|| io::Error::other("System.getProperty was not found"))?
     };
-    let key = env.new_string_utf_cstr(c"java.version").unwrap();
+    let key = env
+        .new_string_utf_cstr(c"java.version")
+        .ok_or_else(|| io::Error::other("could not allocate java.version key"))?;
     let value = unsafe {
         env.call_static_object_method(system, get_prop, &[jni::jvalue { l: key }])
     };
@@ -64,20 +69,28 @@ that lifetime.
 - For native worker threads, prefer `attach_current_thread_guard()` or
   `with_attached_current_thread()`; they detach only if they attached the
   thread themselves.
-- Use `attach_current_thread()` / `detach_current_thread()` directly only when
-  explicit lifecycle control is required.
+- Use the unsafe `attach_current_thread()` / `detach_current_thread()` pair
+  directly only when explicit lifecycle control is required and no `JniEnv`
+  survives detachment. The safe guard and closure APIs bind the environment to
+  the VM and attachment lifetime.
 
 ```rust,ignore
 let answer = vm.with_attached_current_thread(|env| {
-    let cls = env.find_class_cstr(c"java/lang/Integer").unwrap();
+    let Some(cls) = env.find_class_cstr(c"java/lang/Integer") else {
+        return "<missing java.lang.Integer>".to_owned();
+    };
     let method = unsafe {
-        env.get_static_method_id_cstr(cls, c"toString", c"(I)Ljava/lang/String;")
-            .unwrap()
+        let Some(method) =
+            env.get_static_method_id_cstr(cls, c"toString", c"(I)Ljava/lang/String;")
+        else {
+            return "<missing Integer.toString>".to_owned();
+        };
+        method
     };
     let value = unsafe {
         env.call_static_object_method(cls, method, &[jni::jvalue { i: 42 }])
     };
-    unsafe { env.get_string_utf(value) }.unwrap()
+    unsafe { env.get_string_utf(value) }.unwrap_or_else(|| "<conversion failed>".to_owned())
 })?;
 
 assert_eq!(answer, "42");

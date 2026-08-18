@@ -33,14 +33,11 @@ impl Agent for ClassTracer {
         _context: CallbackContext<'_>,
         event: ClassFileLoadHookEvent<'_>,
     ) {
-        let class_name = event
-            .name()
-            .and_then(|name| name.to_str().ok())
-            .unwrap_or("<unknown>");
+        let class_name = event.name_str().ok().flatten();
 
         eprintln!(
             "[tracer] Loaded: {} ({} bytes)",
-            class_name,
+            class_name.as_deref().unwrap_or("<unknown>"),
             event.class_data().len()
         );
     }

@@ -38,7 +38,7 @@ impl Agent for MethodCounter {
         println!("[MethodCounter] Loading agent...");
 
         // Parse options (example: "verbose" flag)
-        let options = context.options_str().ok().flatten().unwrap_or("");
+        let options = context.options_str().ok().flatten().unwrap_or_default();
         let verbose = options.contains("verbose");
         if verbose {
             println!("[MethodCounter] Verbose mode enabled");

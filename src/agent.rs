@@ -1,6 +1,7 @@
 //! Callback-scoped agent lifecycle inputs.
 
 use crate::env::Jvmti;
+use crate::mutf8::{self, Mutf8Error};
 use crate::sys::jni;
 use std::borrow::Cow;
 use std::ffi::{CStr, c_char, c_void};
@@ -89,14 +90,21 @@ impl<'callback> AgentLoadContext<'callback> {
         self.options.map(CStr::to_bytes)
     }
 
-    /// Decode options without silently replacing invalid UTF-8.
-    pub fn options_str(&self) -> Result<Option<&'callback str>, std::str::Utf8Error> {
-        self.options.map(CStr::to_str).transpose()
+    /// Decode the JVM's Modified UTF-8 options without replacement.
+    ///
+    /// Ordinary UTF-8-compatible options are borrowed. Options containing
+    /// Java's special NUL or supplementary-character encodings are converted
+    /// into an owned string.
+    pub fn options_str(&self) -> Result<Option<Cow<'callback, str>>, Mutf8Error> {
+        self.options.map(mutf8::decode_cstr_cow).transpose()
     }
 
-    /// Explicitly request a lossy text view of the option bytes.
+    /// Explicitly request a lossy Modified UTF-8 view of the option bytes.
     pub fn options_lossy(&self) -> Option<Cow<'callback, str>> {
-        self.options.map(CStr::to_string_lossy)
+        self.options.map(|options| {
+            mutf8::decode_cstr_cow(options)
+                .unwrap_or_else(|_| Cow::Owned(mutf8::decode_cstr_lossy(options)))
+        })
     }
 
     /// Opaque pointer reserved by the JVM specification for future use.

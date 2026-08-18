@@ -1,5 +1,8 @@
 /target
 Cargo.lock
+!templates/**/Cargo.lock
+__pycache__/
+*.py[cod]
 
 # Local scratch
 stash.txt

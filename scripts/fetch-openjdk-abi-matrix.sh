@@ -5,6 +5,7 @@ repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 manifest="$repo_root/tests/abi/openjdk-releases.tsv"
 destination="${OPENJDK_ABI_SOURCE_ROOT:-$repo_root/target/openjdk-abi-sources}"
 base_url="https://raw.githubusercontent.com/openjdk/jdk"
+requested=("$@")
 
 command -v curl >/dev/null || {
   echo "curl is required to fetch the pinned OpenJDK ABI sources" >&2
@@ -13,6 +14,13 @@ command -v curl >/dev/null || {
 
 while IFS=$'\t' read -r feature tag commit; do
   [[ -n "$feature" && "$feature" != \#* ]] || continue
+  if ((${#requested[@]})); then
+    selected=false
+    for wanted in "${requested[@]}"; do
+      [[ "$feature" == "$wanted" ]] && selected=true
+    done
+    [[ "$selected" == true ]] || continue
+  fi
   source_root="$destination/jdk$feature"
   if [[ "$feature" == 9 ]]; then
     mappings=(
@@ -31,17 +39,28 @@ while IFS=$'\t' read -r feature tag commit; do
       "src/java.base/unix/native/include/jni_md.h:src/java.base/unix/native/include/jni_md.h"
     )
   fi
+  marker="$source_root/.openjdk-pinned-source"
+  expected_marker=$(printf '%s\t%s\t%s' "$feature" "$tag" "$commit")
+  cached_marker=
+  if [[ -f "$marker" ]]; then
+    cached_marker=$(cat "$marker")
+  fi
   for mapping in "${mappings[@]}"; do
     upstream=${mapping%%:*}
     relative=${mapping#*:}
     output="$source_root/$relative"
-    [[ -s "$output" ]] && continue
+    if [[ "$cached_marker" == "$expected_marker" && -s "$output" ]]; then
+      continue
+    fi
     mkdir -p "$(dirname -- "$output")"
     printf 'fetch JDK %s (%s) %s\n' "$feature" "$tag" "$upstream"
     curl --fail --location --silent --show-error --retry 3 \
       "$base_url/$commit/$upstream" \
       --output "$output"
   done
+  marker_tmp="$marker.$$"
+  printf '%s\n' "$expected_marker" > "$marker_tmp"
+  mv "$marker_tmp" "$marker"
 done < "$manifest"
 
 printf 'Pinned OpenJDK ABI sources are under %s\n' "$destination"

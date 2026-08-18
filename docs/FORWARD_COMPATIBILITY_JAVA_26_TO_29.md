@@ -38,7 +38,7 @@ inference:
 - Value classes are preview work and may still change before Java SE 28 is
   finalized.
 - OpenJDK has not yet published a JDK 29 branch, tag, project repository, or
-  Java SE 29 JSR. As of the research date, OpenJDK `master` identifies itself
+  Java SE 29 JSR. As of 2026-08-18, OpenJDK `master` identifies itself
   as JDK 28. This document therefore treats JDK 29 as an unknown-next-release
   compatibility boundary, not as an ABI that can already be copied.
 - OpenJDK `master` is implementation evidence, not a promise that every current
@@ -51,15 +51,18 @@ The source comparison used these pinned OpenJDK revisions:
 | --- | --- |
 | JDK 26 | `4408cd2a07a14243a58cd9d30813302bfbe81133` |
 | JDK 27 | `8106099da073416b2b1e1b9ff18afdfe2bafe989` |
-| OpenJDK main line (JDK 28) | `4555cf21371723f8fc69b28d265b5e342b900f28` |
+| OpenJDK JDK 28 build 11 (`jdk-28+11`) | `d426d66b5e27f54f676f04e3263eb72be67b1f5f` |
 
-The full JDK 28 source snapshot is installed locally at
-`/opt/jvmsrc/jdk28-openjdk-4555cf213717`. Its provenance file records the
-upstream URL, exact revision, download time, and archive SHA-256. No local
-directory is labeled JDK 29 because no corresponding upstream source exists.
+The ABI gate fetches the immutable revision above into a commit-stamped cache.
+The fetcher records the feature, tag, and commit and refreshes every input when
+that marker changes, preventing a new manifest pin from silently reusing stale
+headers. No source directory is labeled JDK 29 because no corresponding
+upstream source exists.
 
 The comparison covered `jni.h` and the source-of-truth `jvmti.xml`, not only
-generated documentation.
+generated documentation. JDK 28 build 11 and OpenJDK mainline revision
+`4d812a64865ef250bd81705ae0c0a18675e4b378` have byte-identical JNI/JVM TI ABI
+inputs as of 2026-08-18.
 
 ## JDK 26 and JDK 27
 

@@ -5,10 +5,12 @@
 //! valid only when the corresponding JVM specification explicitly permits it.
 
 use crate::env::{JniEnv, Jvmti};
+use crate::mutf8::{self, Mutf8Error};
 use crate::sys::{jni, jvmti};
 use crate::version::{
     RuntimeSupport, jni_version_feature, jvmti_interface_feature, runtime_support,
 };
+use std::borrow::Cow;
 use std::ffi::{CStr, c_char, c_void};
 use std::marker::PhantomData;
 use std::ops::Deref;
@@ -372,6 +374,7 @@ pub struct ClassFileLoadHookEvent<'callback> {
     class_data: *const u8,
     new_class_data_length: *mut jni::jint,
     new_class_data: *mut *mut u8,
+    transformed_class_set: bool,
     _lifetime: PhantomData<&'callback [u8]>,
 }
 
@@ -396,6 +399,7 @@ impl<'callback> ClassFileLoadHookEvent<'callback> {
             class_data,
             new_class_data_length,
             new_class_data,
+            transformed_class_set: false,
             _lifetime: PhantomData,
         }
     }
@@ -408,6 +412,10 @@ impl<'callback> ClassFileLoadHookEvent<'callback> {
     }
     pub fn name(&self) -> Option<&'callback CStr> {
         (!self.name.is_null()).then(|| unsafe { CStr::from_ptr(self.name) })
+    }
+    /// Decode the optional class name as Java Modified UTF-8.
+    pub fn name_str(&self) -> Result<Option<Cow<'callback, str>>, Mutf8Error> {
+        self.name().map(mutf8::decode_cstr_cow).transpose()
     }
     pub fn protection_domain(&self) -> jni::jobject {
         self.protection_domain
@@ -430,6 +438,9 @@ impl<'callback> ClassFileLoadHookEvent<'callback> {
         if self.new_class_data.is_null() || self.new_class_data_length.is_null() {
             return Err(jvmti::jvmtiError::NULL_POINTER);
         }
+        if self.transformed_class_set {
+            return Err(jvmti::jvmtiError::DUPLICATE);
+        }
         let length =
             jni::jint::try_from(bytes.len()).map_err(|_| jvmti::jvmtiError::ILLEGAL_ARGUMENT)?;
         let mut allocation = context.jvmti().allocate(bytes.len())?;
@@ -439,6 +450,7 @@ impl<'callback> ClassFileLoadHookEvent<'callback> {
             *self.new_class_data = data;
             *self.new_class_data_length = length;
         }
+        self.transformed_class_set = true;
         Ok(())
     }
 }
@@ -518,6 +530,10 @@ impl<'callback> DynamicCodeGeneratedEvent<'callback> {
     pub fn name(&self) -> Option<&'callback CStr> {
         (!self.name.is_null()).then(|| unsafe { CStr::from_ptr(self.name) })
     }
+    /// Decode the generated-code name as Java Modified UTF-8.
+    pub fn name_str(&self) -> Result<Option<Cow<'callback, str>>, Mutf8Error> {
+        self.name().map(mutf8::decode_cstr_cow).transpose()
+    }
     pub fn address(&self) -> *const c_void {
         self.address
     }
@@ -557,5 +573,94 @@ impl<'callback> ResourceExhaustedEvent<'callback> {
     }
     pub fn description(&self) -> Option<&'callback CStr> {
         (!self.description.is_null()).then(|| unsafe { CStr::from_ptr(self.description) })
+    }
+    /// Decode the optional description as Java Modified UTF-8.
+    pub fn description_str(&self) -> Result<Option<Cow<'callback, str>>, Mutf8Error> {
+        self.description().map(mutf8::decode_cstr_cow).transpose()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::alloc::{Layout, alloc, dealloc};
+    use std::ptr;
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use super::*;
+
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+    static ALLOCATION_SIZE: AtomicUsize = AtomicUsize::new(0);
+    static ALLOCATIONS: AtomicUsize = AtomicUsize::new(0);
+    static DEALLOCATIONS: AtomicUsize = AtomicUsize::new(0);
+
+    unsafe extern "system" fn allocate_bytes(
+        _env: *mut jvmti::jvmtiEnv,
+        size: jni::jlong,
+        result: *mut *mut u8,
+    ) -> jvmti::jvmtiError {
+        if size <= 0 || result.is_null() {
+            return jvmti::jvmtiError::ILLEGAL_ARGUMENT;
+        }
+        let size = size as usize;
+        let memory = unsafe { alloc(Layout::from_size_align(size, 1).unwrap()) };
+        if memory.is_null() {
+            return jvmti::jvmtiError::OUT_OF_MEMORY;
+        }
+        ALLOCATION_SIZE.store(size, Ordering::SeqCst);
+        ALLOCATIONS.fetch_add(1, Ordering::SeqCst);
+        unsafe { *result = memory };
+        jvmti::jvmtiError::NONE
+    }
+
+    unsafe extern "system" fn deallocate_bytes(
+        _env: *mut jvmti::jvmtiEnv,
+        memory: *mut u8,
+    ) -> jvmti::jvmtiError {
+        if !memory.is_null() {
+            let size = ALLOCATION_SIZE.swap(0, Ordering::SeqCst);
+            unsafe { dealloc(memory, Layout::from_size_align(size, 1).unwrap()) };
+            DEALLOCATIONS.fetch_add(1, Ordering::SeqCst);
+        }
+        jvmti::jvmtiError::NONE
+    }
+
+    #[test]
+    fn transformed_class_output_is_single_assignment() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        ALLOCATIONS.store(0, Ordering::SeqCst);
+        DEALLOCATIONS.store(0, Ordering::SeqCst);
+
+        let table = jvmti::jvmtiInterface_1_ {
+            Allocate: Some(allocate_bytes),
+            Deallocate: Some(deallocate_bytes),
+            ..Default::default()
+        };
+        let mut raw_env = jvmti::jvmtiEnv { functions: &table };
+        let context = unsafe { CallbackContext::from_raw(&mut raw_env, ptr::null_mut()) }.unwrap();
+        let mut output_length = 0;
+        let mut output = ptr::null_mut();
+        let mut event = ClassFileLoadHookEvent::new(
+            ptr::null_mut(),
+            ptr::null_mut(),
+            ptr::null(),
+            ptr::null_mut(),
+            0,
+            ptr::null(),
+            &mut output_length,
+            &mut output,
+        );
+
+        event.set_transformed_class(&context, &[1, 2, 3]).unwrap();
+        assert_eq!(
+            event.set_transformed_class(&context, &[4, 5, 6]),
+            Err(jvmti::jvmtiError::DUPLICATE)
+        );
+        assert_eq!(ALLOCATIONS.load(Ordering::SeqCst), 1);
+        assert_eq!(output_length, 3);
+        assert_eq!(unsafe { std::slice::from_raw_parts(output, 3) }, &[1, 2, 3]);
+
+        unsafe { context.jvmti().deallocate_raw(output) }.unwrap();
+        assert_eq!(DEALLOCATIONS.load(Ordering::SeqCst), 1);
     }
 }

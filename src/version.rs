@@ -332,6 +332,7 @@ pub enum RuntimeChange {
 }
 
 /// Exact native-table prefixes and first-introduced behavior for one release.
+#[non_exhaustive]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct ReleaseProfile {
     pub feature: u16,
@@ -349,6 +350,7 @@ pub struct ReleaseProfile {
 ///
 /// Interface revisions and native table prefixes are compared directly;
 /// [`RuntimeChange`] records changes that cannot be derived from byte sizes.
+#[non_exhaustive]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct ReleaseDelta {
     pub from_feature: u16,

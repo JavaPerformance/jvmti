@@ -14,11 +14,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
         toolchain: [1.85.0, stable]
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
         with:
           toolchain: ${{ matrix.toolchain }}
           components: clippy
@@ -32,18 +32,30 @@ jobs:
         run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - name: Build examples
         run: cargo build --locked --examples --all-features
+      - name: Prove the host C va_list calling convention
+        if: runner.os != 'Windows'
+        run: scripts/check-host-va-list-abi.sh
       - name: Compile the published agent starter
         if: runner.os == 'Linux'
         run: scripts/check-agent-template.sh
 
   quality:
-    name: Formatting, docs, and dependency contract
+    name: Formatting, docs, and dependency contract / Rust ${{ matrix.toolchain }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [1.85.0, stable]
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
         with:
+          toolchain: ${{ matrix.toolchain }}
           components: rustfmt
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: 25
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Test documentation
@@ -54,3 +66,63 @@ jobs:
         run: cargo doc --locked --no-deps --all-features
       - name: Prove the zero-dependency contract
         run: scripts/check-zero-dependencies.sh
+      - name: Prove high-level wrapper coverage
+        run: scripts/check-wrapper-coverage.sh
+      - name: Prove ABI-equivalent wrapper argument forwarding
+        run: scripts/check-wrapper-forwarding.py
+      - name: Prove public API extensibility
+        run: scripts/check-public-api-extensibility.py
+      - name: Require review for every unsafe-boundary change
+        run: scripts/check-unsafe-surface.py
+      - name: Parse the complete current-JDK class-file corpus
+        run: scripts/check-classfile-corpus.sh "$JAVA_HOME"
+      - name: Compile an external agent from the packaged crate
+        run: scripts/check-packaged-agent-template.sh
+      - name: Compile both packaged downstream consumer canaries
+        run: scripts/check-downstream-canaries.sh
+
+  public-api-contract:
+    name: Reviewed 3.0 API baseline and 3.x SemVer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: stable
+      - name: Install pinned API analysis tools
+        run: |
+          rustup toolchain install nightly-2026-08-17 --profile minimal
+          cargo +stable install cargo-public-api --version 0.52.0 --locked
+          cargo +stable install cargo-semver-checks --version 0.42.0 --locked
+      - name: Compare with the reviewed candidate baseline
+        run: scripts/check-public-api-baseline.sh
+      - name: Enforce compatibility with tagged 3.0.0 when available
+        shell: bash
+        run: |
+          if git rev-parse --verify 'v3.0.0^{commit}' >/dev/null 2>&1; then
+            scripts/check-3x-api-compat.sh v3.0.0 HEAD
+          else
+            echo "v3.0.0 is not tagged yet; candidate baseline gate passed"
+          fi
+
+  latest-openjdk-abi:
+    name: Pinned OpenJDK 28 complete raw ABI / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: 1.85.0
+      - name: Install header and binding tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes xsltproc
+          cargo install bindgen-cli --version 0.72.1 --locked
+      - name: Compare every signature, table, callback, constant, layout, and capability bit
+        run: scripts/check-pinned-jdk-abi.sh 28

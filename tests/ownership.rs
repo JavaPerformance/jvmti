@@ -74,15 +74,32 @@ unsafe extern "system" fn get_jni_function_table(
     unsafe { allocate(env, bytes as jni::jlong, table.cast()) }
 }
 
-fn mock_environment() -> (jvmti::jvmtiInterface_1_, jvmti::jvmtiEnv) {
-    let table = jvmti::jvmtiInterface_1_ {
-        Allocate: Some(allocate),
-        Deallocate: Some(deallocate_memory),
-        DisposeEnvironment: Some(dispose_environment),
-        GetVersionNumber: Some(get_version_number),
-        GetJNIFunctionTable: Some(get_jni_function_table),
-        ..Default::default()
+unsafe extern "system" fn get_loaded_classes_with_invalid_count(
+    env: *mut jvmti::jvmtiEnv,
+    count: *mut jni::jint,
+    classes: *mut *mut jni::jclass,
+) -> jvmti::jvmtiError {
+    let error = unsafe {
+        allocate(
+            env,
+            std::mem::size_of::<jni::jclass>() as jni::jlong,
+            classes.cast(),
+        )
     };
+    if error == jvmti::jvmtiError::NONE {
+        unsafe { *count = -1 };
+    }
+    error
+}
+
+fn mock_environment() -> (jvmti::jvmtiInterface_1_, jvmti::jvmtiEnv) {
+    let mut table = jvmti::jvmtiInterface_1_::default();
+    table.Allocate = Some(allocate);
+    table.Deallocate = Some(deallocate_memory);
+    table.DisposeEnvironment = Some(dispose_environment);
+    table.GetVersionNumber = Some(get_version_number);
+    table.GetJNIFunctionTable = Some(get_jni_function_table);
+    table.GetLoadedClasses = Some(get_loaded_classes_with_invalid_count);
     let env = jvmti::jvmtiEnv {
         functions: ptr::null(),
     };
@@ -156,4 +173,23 @@ fn allocation_is_environment_bound_and_deallocated_once() {
 
     env.dispose_environment().unwrap();
     assert_eq!(DISPOSALS.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn malformed_native_array_is_deallocated_before_error_returns() {
+    let _guard = OWNERSHIP_TEST_LOCK.lock().unwrap();
+    ALLOCATIONS.store(0, Ordering::SeqCst);
+    DEALLOCATIONS.store(0, Ordering::SeqCst);
+    LAST_ALLOCATION_SIZE.store(0, Ordering::SeqCst);
+
+    let (table, mut raw_env) = mock_environment();
+    raw_env.functions = &table;
+    let env = unsafe { Jvmti::from_raw(&mut raw_env) };
+
+    assert_eq!(
+        env.get_loaded_classes().unwrap_err(),
+        jvmti::jvmtiError::ILLEGAL_ARGUMENT
+    );
+    assert_eq!(ALLOCATIONS.load(Ordering::SeqCst), 1);
+    assert_eq!(DEALLOCATIONS.load(Ordering::SeqCst), 1);
 }

@@ -232,7 +232,8 @@ fn allocation_and_reference_migration<'a>(
 
     // SAFETY: the same caller guarantee makes the local reference valid for
     // promotion to a global reference on this JNI environment.
-    let global = unsafe { GlobalRef::new(jni_env, local.get()) };
+    let global =
+        unsafe { GlobalRef::new(jni_env, local.get()) }.map_err(|_| jvmti::jvmtiError::INTERNAL)?;
     drop(global);
     drop(local);
     Ok(allocation)
@@ -259,6 +260,14 @@ fn classify_open_error(error: jvmti::jvmtiError) -> &'static str {
         value if value == jvmti::jvmtiError::WRONG_PHASE => "wrong phase",
         _ => "unknown or unhandled",
     }
+}
+
+#[cfg(feature = "embed")]
+#[allow(dead_code)]
+fn embedded_thread_lifetime_migration(vm: &JavaVm) -> Result<(), jni::jint> {
+    let attached = vm.attach_current_thread_guard()?;
+    let _lifetime_bound_env = attached.env();
+    Ok(())
 }
 
 #[test]
@@ -501,6 +510,21 @@ fn migration_guide_covers_the_complete_break_inventory() {
         "JvmtiResumeAllVirtualThreadsFn",
         "JNINativeInterface_",
         "JVMTI_HEAP_OBJECT_EITHER",
+        "jobjectRefType",
+        "JniNewObjectFn",
+        "JvmtiRunAgentThreadFn",
+        "JvmtiIterateOverHeapFn",
+        "JavaString",
+        "RawMonitor",
+        "RawMonitorGuard",
+        "va_list",
+        "ClassFileParseLimits",
+    ];
+    const EMBED_SAFE_TO_UNSAFE: &[&str] = &[
+        "get_env",
+        "attach_current_thread",
+        "attach_current_thread_as_daemon",
+        "detach_current_thread",
     ];
 
     assert_eq!(CALLBACKS.len(), 34);
@@ -510,6 +534,7 @@ fn migration_guide_covers_the_complete_break_inventory() {
     assert_unique(JNI_SAFE_TO_UNSAFE);
     assert_unique(JVMTI_SAFE_TO_UNSAFE);
     assert_unique(RAW_BREAKS);
+    assert_unique(EMBED_SAFE_TO_UNSAFE);
     assert!(GUIDE.contains("`GlobalRef::new` also changed from safe to unsafe"));
 
     for symbol in CALLBACKS
@@ -517,12 +542,15 @@ fn migration_guide_covers_the_complete_break_inventory() {
         .chain(JNI_SAFE_TO_UNSAFE)
         .chain(JVMTI_SAFE_TO_UNSAFE)
         .chain(RAW_BREAKS)
+        .chain(EMBED_SAFE_TO_UNSAFE)
     {
         assert!(
             contains_identifier(GUIDE, symbol),
             "migration guide omits {symbol}"
         );
     }
+    assert!(GUIDE.contains("ClassFile::parse_with_limits"));
+    assert!(GUIDE.contains("panic = \"abort\""));
 }
 
 fn assert_unique(symbols: &[&str]) {

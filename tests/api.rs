@@ -1,9 +1,13 @@
 use std::ffi::CStr;
 use std::ptr;
 
-use jvmti_bindings::env::{JniEnv, Jvmti};
+use jvmti_bindings::classfile::{ClassFile, ClassFileParseLimits, JavaString};
+use jvmti_bindings::env::{
+    GlobalRef, JavaMonitorGuard, JniEnv, Jvmti, LocalFrame, PrimitiveArrayCritical,
+    PrimitiveArrayElements, RawMonitor, RawMonitorGuard, StringCritical, WeakGlobalRef,
+};
 use jvmti_bindings::sys::jvmti;
-use jvmti_bindings::{describe_jni_result, jni};
+use jvmti_bindings::{describe_jni_result, jni, mutf8};
 
 #[test]
 fn jvmti_new_rejects_null_vm_pointer() {
@@ -97,6 +101,7 @@ fn allocation_free_c_string_helpers_are_public_api() {
     let _ =
         JniEnv::throw_new_cstr as unsafe fn(&JniEnv, jni::jclass, &CStr) -> Result<(), jni::jint>;
     let _ = JniEnv::new_string_utf_cstr as fn(&JniEnv, &CStr) -> Option<jni::jstring>;
+    let _ = JniEnv::new_string_utf16 as fn(&JniEnv, &[jni::jchar]) -> Option<jni::jstring>;
     let _ = JniEnv::get_method_id_cstr
         as unsafe fn(&JniEnv, jni::jclass, &CStr, &CStr) -> Option<jni::jmethodID>;
     let _ = JniEnv::get_static_method_id_cstr
@@ -105,6 +110,57 @@ fn allocation_free_c_string_helpers_are_public_api() {
         as unsafe fn(&JniEnv, jni::jclass, &CStr, &CStr) -> Option<jni::jfieldID>;
     let _ = JniEnv::get_static_field_id_cstr
         as unsafe fn(&JniEnv, jni::jclass, &CStr, &CStr) -> Option<jni::jfieldID>;
+}
+
+#[test]
+fn complete_fixed_signature_jni_families_are_public_api() {
+    let _ = JniEnv::from_reflected_method as unsafe fn(&JniEnv, jni::jobject) -> jni::jmethodID;
+    let _ = JniEnv::to_reflected_field
+        as unsafe fn(&JniEnv, jni::jclass, jni::jfieldID, bool) -> Option<jni::jobject>;
+    let _ = JniEnv::fatal_error as fn(&JniEnv, &str) -> !;
+    let _ = JniEnv::get_string_region
+        as unsafe fn(&JniEnv, jni::jstring, jni::jsize, jni::jsize, &mut [jni::jchar]);
+    let _: for<'a> unsafe fn(&'a JniEnv, jni::jstring) -> Option<StringCritical<'a>> =
+        JniEnv::get_string_critical;
+
+    let _ = JniEnv::call_byte_method
+        as unsafe fn(&JniEnv, jni::jobject, jni::jmethodID, &[jni::jvalue]) -> jni::jbyte;
+    let _ = JniEnv::call_nonvirtual_boolean_method
+        as unsafe fn(&JniEnv, jni::jobject, jni::jclass, jni::jmethodID, &[jni::jvalue]) -> bool;
+    let _ = JniEnv::call_static_double_method
+        as unsafe fn(&JniEnv, jni::jclass, jni::jmethodID, &[jni::jvalue]) -> jni::jdouble;
+
+    let _ = JniEnv::get_boolean_field as unsafe fn(&JniEnv, jni::jobject, jni::jfieldID) -> bool;
+    let _ =
+        JniEnv::set_double_field as unsafe fn(&JniEnv, jni::jobject, jni::jfieldID, jni::jdouble);
+    let _ = JniEnv::get_static_long_field
+        as unsafe fn(&JniEnv, jni::jclass, jni::jfieldID) -> jni::jlong;
+    let _ =
+        JniEnv::set_static_boolean_field as unsafe fn(&JniEnv, jni::jclass, jni::jfieldID, bool);
+
+    let _ = JniEnv::new_boolean_array as fn(&JniEnv, jni::jsize) -> Option<jni::jbooleanArray>;
+    let _: for<'a> unsafe fn(
+        &'a JniEnv,
+        jni::jintArray,
+    ) -> Option<PrimitiveArrayElements<'a, jni::jint>> = JniEnv::get_int_array_elements;
+    let _ = JniEnv::get_double_array_region
+        as unsafe fn(&JniEnv, jni::jdoubleArray, jni::jsize, jni::jsize, &mut [jni::jdouble]);
+    let _: for<'a> unsafe fn(&'a JniEnv, jni::jarray) -> Option<PrimitiveArrayCritical<'a>> =
+        JniEnv::get_primitive_array_critical;
+    let _: for<'a> fn(&'a JniEnv, jni::jint) -> Result<LocalFrame<'a>, jni::jint> =
+        JniEnv::push_local_frame;
+    let _: for<'a> unsafe fn(&'a JniEnv, jni::jobject) -> Result<JavaMonitorGuard<'a>, jni::jint> =
+        JniEnv::monitor_enter;
+
+    let _ = JniEnv::new_direct_byte_buffer
+        as unsafe fn(&JniEnv, *mut std::ffi::c_void, jni::jlong) -> Option<jni::jobject>;
+    let _ = JniEnv::get_object_ref_type as unsafe fn(&JniEnv, jni::jobject) -> jni::jobjectRefType;
+}
+
+#[test]
+fn explicit_global_reference_cleanup_is_public_api() {
+    let _ = GlobalRef::close as fn(GlobalRef) -> Result<(), jni::jint>;
+    let _ = WeakGlobalRef::close as fn(WeakGlobalRef) -> Result<(), jni::jint>;
 }
 
 #[test]
@@ -129,4 +185,49 @@ fn canonical_callback_context_and_payloads_are_public_api() {
         CallbackContext<'callback>,
         CompiledMethodLoadEvent<'callback>,
     ) = <ApiAgent as Agent>::compiled_method_load;
+}
+
+#[test]
+fn modified_utf8_and_exact_java_strings_are_public_api() {
+    let encoded = mutf8::encode("nul=\0,rocket=\u{1f680}");
+    mutf8::validate(&encoded).unwrap();
+    assert_eq!(mutf8::decode(&encoded).unwrap(), "nul=\0,rocket=\u{1f680}");
+    assert_eq!(
+        mutf8::decode_utf16(&encoded).unwrap(),
+        "nul=\0,rocket=\u{1f680}".encode_utf16().collect::<Vec<_>>()
+    );
+
+    let exact = JavaString::Utf16WithUnpairedSurrogates(vec![0xd800]);
+    assert!(exact.as_str().is_none());
+    assert_eq!(exact.to_utf16().as_ref(), [0xd800]);
+    let _parse = ClassFile::parse as fn(&[u8]) -> Result<ClassFile, _>;
+    let limits = ClassFileParseLimits::new()
+        .with_max_input_bytes(1_000_000)
+        .with_max_allocation_bytes(4_000_000)
+        .with_max_attribute_nesting(64)
+        .with_max_annotation_nesting(64);
+    assert_eq!(limits.max_attribute_nesting(), 64);
+
+    let _get_utf16 =
+        JniEnv::get_string_utf16 as unsafe fn(&JniEnv, jni::jstring) -> Option<Vec<jni::jchar>>;
+    let _get_lossy = JniEnv::get_string_lossy as unsafe fn(&JniEnv, jni::jstring) -> Option<String>;
+}
+
+#[test]
+fn owning_raw_monitor_surface_is_public_api() {
+    let _create: for<'a> fn(&'a Jvmti, &str) -> Result<RawMonitor<'a>, jvmti::jvmtiError> =
+        Jvmti::create_raw_monitor;
+
+    fn compile_monitor_lifecycle<'env>(monitor: RawMonitor<'env>) {
+        let guard: Result<RawMonitorGuard<'_, 'env>, _> = monitor.enter();
+        drop(guard);
+        let _: Result<(), jvmti::jvmtiError> = monitor.close();
+    }
+    let _ = compile_monitor_lifecycle;
+}
+
+#[test]
+fn open_native_domains_preserve_unknown_values() {
+    assert_eq!(jni::jobjectRefType::from_raw(99).raw(), 99);
+    assert_eq!(jvmti::jvmtiError::from_raw(999).raw(), 999);
 }

@@ -3,7 +3,7 @@
 // Complete JVMTI (JVM Tool Interface) bindings for Rust.
 // No external dependencies - suitable for standalone use.
 //
-// ABI-verified against OpenJDK 8 through current JDK 28 headers.
+// Source-ABI verified against pinned OpenJDK 8-28 revisions.
 //
 // The JVMTI interface preserves existing offsets while newer JDKs append a
 // tail slot or consume previously reserved slots:
@@ -27,16 +27,25 @@ use std::os::raw::{c_uchar, c_void};
 
 // --- Constants ---
 pub const JVMTI_VERSION_1_0: jint = 0x30010000;
+pub const JVMTI_VERSION_1: jint = JVMTI_VERSION_1_0;
 pub const JVMTI_VERSION_1_1: jint = 0x30010100;
 pub const JVMTI_VERSION_1_2: jint = 0x30010200;
 pub const JVMTI_VERSION_9: jint = 0x30090000;
 pub const JVMTI_VERSION_11: jint = 0x300B0000;
 pub const JVMTI_VERSION_19: jint = 0x30130000;
 pub const JVMTI_VERSION_21: jint = 0x30150000;
+/// Interface version represented by the latest audited header (JDK 28).
+pub const JVMTI_VERSION: jint = 0x301C0000;
 
 pub const JVMTI_VERSION_INTERFACE_JVMTI: jint = 0x30000000;
+pub const JVMTI_VERSION_INTERFACE_JNI: jint = 0x00000000;
+pub const JVMTI_VERSION_MASK_INTERFACE_TYPE: jint = 0x70000000;
 pub const JVMTI_VERSION_MASK_MAJOR: jint = 0x0FFF0000;
+pub const JVMTI_VERSION_MASK_MINOR: jint = 0x0000FF00;
+pub const JVMTI_VERSION_MASK_MICRO: jint = 0x000000FF;
 pub const JVMTI_VERSION_SHIFT_MAJOR: u32 = 16;
+pub const JVMTI_VERSION_SHIFT_MINOR: u32 = 8;
+pub const JVMTI_VERSION_SHIFT_MICRO: u32 = 0;
 
 /// Return the JVM TI interface version advertised by a Java feature release.
 ///
@@ -64,55 +73,213 @@ pub const fn version_feature(version: jint) -> u16 {
     ((version & JVMTI_VERSION_MASK_MAJOR) as u32 >> JVMTI_VERSION_SHIFT_MAJOR) as u16
 }
 
-pub const JVMTI_EVENT_VM_INIT: u32 = 50;
-pub const JVMTI_EVENT_VM_DEATH: u32 = 51;
-pub const JVMTI_EVENT_THREAD_START: u32 = 52;
-pub const JVMTI_EVENT_THREAD_END: u32 = 53;
-pub const JVMTI_EVENT_CLASS_FILE_LOAD_HOOK: u32 = 54;
-pub const JVMTI_EVENT_CLASS_LOAD: u32 = 55;
-pub const JVMTI_EVENT_CLASS_PREPARE: u32 = 56;
-pub const JVMTI_EVENT_VM_START: u32 = 57;
-pub const JVMTI_EVENT_EXCEPTION: u32 = 58;
-pub const JVMTI_EVENT_EXCEPTION_CATCH: u32 = 59;
-pub const JVMTI_EVENT_SINGLE_STEP: u32 = 60;
-pub const JVMTI_EVENT_FRAME_POP: u32 = 61;
-pub const JVMTI_EVENT_BREAKPOINT: u32 = 62;
-pub const JVMTI_EVENT_FIELD_ACCESS: u32 = 63;
-pub const JVMTI_EVENT_FIELD_MODIFICATION: u32 = 64;
-pub const JVMTI_EVENT_METHOD_ENTRY: u32 = 65;
-pub const JVMTI_EVENT_METHOD_EXIT: u32 = 66;
-pub const JVMTI_EVENT_NATIVE_METHOD_BIND: u32 = 67;
-pub const JVMTI_EVENT_COMPILED_METHOD_LOAD: u32 = 68;
-pub const JVMTI_EVENT_COMPILED_METHOD_UNLOAD: u32 = 69;
-pub const JVMTI_EVENT_DYNAMIC_CODE_GENERATED: u32 = 70;
-pub const JVMTI_EVENT_DATA_DUMP_REQUEST: u32 = 71;
-pub const JVMTI_EVENT_MONITOR_WAIT: u32 = 73;
-pub const JVMTI_EVENT_MONITOR_WAITED: u32 = 74;
-pub const JVMTI_EVENT_MONITOR_CONTENDED_ENTER: u32 = 75;
-pub const JVMTI_EVENT_MONITOR_CONTENDED_ENTERED: u32 = 76;
-pub const JVMTI_EVENT_RESOURCE_EXHAUSTED: u32 = 80;
-pub const JVMTI_EVENT_GARBAGE_COLLECTION_START: u32 = 81;
-pub const JVMTI_EVENT_GARBAGE_COLLECTION_FINISH: u32 = 82;
-pub const JVMTI_EVENT_OBJECT_FREE: u32 = 83;
-pub const JVMTI_EVENT_VM_OBJECT_ALLOC: u32 = 84;
-pub const JVMTI_EVENT_SAMPLED_OBJECT_ALLOC: u32 = 86;
-pub const JVMTI_EVENT_VIRTUAL_THREAD_START: u32 = 87;
-pub const JVMTI_EVENT_VIRTUAL_THREAD_END: u32 = 88;
+pub type jvmtiEvent = u32;
+pub const JVMTI_MIN_EVENT_TYPE_VAL: jvmtiEvent = 50;
+pub const JVMTI_EVENT_VM_INIT: jvmtiEvent = 50;
+pub const JVMTI_EVENT_VM_DEATH: jvmtiEvent = 51;
+pub const JVMTI_EVENT_THREAD_START: jvmtiEvent = 52;
+pub const JVMTI_EVENT_THREAD_END: jvmtiEvent = 53;
+pub const JVMTI_EVENT_CLASS_FILE_LOAD_HOOK: jvmtiEvent = 54;
+pub const JVMTI_EVENT_CLASS_LOAD: jvmtiEvent = 55;
+pub const JVMTI_EVENT_CLASS_PREPARE: jvmtiEvent = 56;
+pub const JVMTI_EVENT_VM_START: jvmtiEvent = 57;
+pub const JVMTI_EVENT_EXCEPTION: jvmtiEvent = 58;
+pub const JVMTI_EVENT_EXCEPTION_CATCH: jvmtiEvent = 59;
+pub const JVMTI_EVENT_SINGLE_STEP: jvmtiEvent = 60;
+pub const JVMTI_EVENT_FRAME_POP: jvmtiEvent = 61;
+pub const JVMTI_EVENT_BREAKPOINT: jvmtiEvent = 62;
+pub const JVMTI_EVENT_FIELD_ACCESS: jvmtiEvent = 63;
+pub const JVMTI_EVENT_FIELD_MODIFICATION: jvmtiEvent = 64;
+pub const JVMTI_EVENT_METHOD_ENTRY: jvmtiEvent = 65;
+pub const JVMTI_EVENT_METHOD_EXIT: jvmtiEvent = 66;
+pub const JVMTI_EVENT_NATIVE_METHOD_BIND: jvmtiEvent = 67;
+pub const JVMTI_EVENT_COMPILED_METHOD_LOAD: jvmtiEvent = 68;
+pub const JVMTI_EVENT_COMPILED_METHOD_UNLOAD: jvmtiEvent = 69;
+pub const JVMTI_EVENT_DYNAMIC_CODE_GENERATED: jvmtiEvent = 70;
+pub const JVMTI_EVENT_DATA_DUMP_REQUEST: jvmtiEvent = 71;
+pub const JVMTI_EVENT_MONITOR_WAIT: jvmtiEvent = 73;
+pub const JVMTI_EVENT_MONITOR_WAITED: jvmtiEvent = 74;
+pub const JVMTI_EVENT_MONITOR_CONTENDED_ENTER: jvmtiEvent = 75;
+pub const JVMTI_EVENT_MONITOR_CONTENDED_ENTERED: jvmtiEvent = 76;
+pub const JVMTI_EVENT_RESOURCE_EXHAUSTED: jvmtiEvent = 80;
+pub const JVMTI_EVENT_GARBAGE_COLLECTION_START: jvmtiEvent = 81;
+pub const JVMTI_EVENT_GARBAGE_COLLECTION_FINISH: jvmtiEvent = 82;
+pub const JVMTI_EVENT_OBJECT_FREE: jvmtiEvent = 83;
+pub const JVMTI_EVENT_VM_OBJECT_ALLOC: jvmtiEvent = 84;
+pub const JVMTI_EVENT_SAMPLED_OBJECT_ALLOC: jvmtiEvent = 86;
+pub const JVMTI_EVENT_VIRTUAL_THREAD_START: jvmtiEvent = 87;
+pub const JVMTI_EVENT_VIRTUAL_THREAD_END: jvmtiEvent = 88;
+pub const JVMTI_MAX_EVENT_TYPE_VAL: jvmtiEvent = 88;
+
+// --- Thread state and priority flags ---
+pub const JVMTI_THREAD_STATE_ALIVE: jint = 0x0001;
+pub const JVMTI_THREAD_STATE_TERMINATED: jint = 0x0002;
+pub const JVMTI_THREAD_STATE_RUNNABLE: jint = 0x0004;
+pub const JVMTI_THREAD_STATE_BLOCKED_ON_MONITOR_ENTER: jint = 0x0400;
+pub const JVMTI_THREAD_STATE_WAITING: jint = 0x0080;
+pub const JVMTI_THREAD_STATE_WAITING_INDEFINITELY: jint = 0x0010;
+pub const JVMTI_THREAD_STATE_WAITING_WITH_TIMEOUT: jint = 0x0020;
+pub const JVMTI_THREAD_STATE_SLEEPING: jint = 0x0040;
+pub const JVMTI_THREAD_STATE_IN_OBJECT_WAIT: jint = 0x0100;
+pub const JVMTI_THREAD_STATE_PARKED: jint = 0x0200;
+pub const JVMTI_THREAD_STATE_SUSPENDED: jint = 0x100000;
+pub const JVMTI_THREAD_STATE_INTERRUPTED: jint = 0x200000;
+pub const JVMTI_THREAD_STATE_IN_NATIVE: jint = 0x400000;
+pub const JVMTI_THREAD_STATE_VENDOR_1: jint = 0x10000000;
+pub const JVMTI_THREAD_STATE_VENDOR_2: jint = 0x20000000;
+pub const JVMTI_THREAD_STATE_VENDOR_3: jint = 0x40000000;
+
+pub const JVMTI_JAVA_LANG_THREAD_STATE_MASK: jint = JVMTI_THREAD_STATE_TERMINATED
+    | JVMTI_THREAD_STATE_ALIVE
+    | JVMTI_THREAD_STATE_RUNNABLE
+    | JVMTI_THREAD_STATE_BLOCKED_ON_MONITOR_ENTER
+    | JVMTI_THREAD_STATE_WAITING
+    | JVMTI_THREAD_STATE_WAITING_INDEFINITELY
+    | JVMTI_THREAD_STATE_WAITING_WITH_TIMEOUT;
+pub const JVMTI_JAVA_LANG_THREAD_STATE_NEW: jint = 0;
+pub const JVMTI_JAVA_LANG_THREAD_STATE_TERMINATED: jint = JVMTI_THREAD_STATE_TERMINATED;
+pub const JVMTI_JAVA_LANG_THREAD_STATE_RUNNABLE: jint =
+    JVMTI_THREAD_STATE_ALIVE | JVMTI_THREAD_STATE_RUNNABLE;
+pub const JVMTI_JAVA_LANG_THREAD_STATE_BLOCKED: jint =
+    JVMTI_THREAD_STATE_ALIVE | JVMTI_THREAD_STATE_BLOCKED_ON_MONITOR_ENTER;
+pub const JVMTI_JAVA_LANG_THREAD_STATE_WAITING: jint =
+    JVMTI_THREAD_STATE_ALIVE | JVMTI_THREAD_STATE_WAITING | JVMTI_THREAD_STATE_WAITING_INDEFINITELY;
+pub const JVMTI_JAVA_LANG_THREAD_STATE_TIMED_WAITING: jint =
+    JVMTI_THREAD_STATE_ALIVE | JVMTI_THREAD_STATE_WAITING | JVMTI_THREAD_STATE_WAITING_WITH_TIMEOUT;
+
+pub const JVMTI_THREAD_MIN_PRIORITY: jint = 1;
+pub const JVMTI_THREAD_NORM_PRIORITY: jint = 5;
+pub const JVMTI_THREAD_MAX_PRIORITY: jint = 10;
+
+// --- Heap filters and visit controls ---
+pub const JVMTI_HEAP_FILTER_TAGGED: jint = 0x4;
+pub const JVMTI_HEAP_FILTER_UNTAGGED: jint = 0x8;
+pub const JVMTI_HEAP_FILTER_CLASS_TAGGED: jint = 0x10;
+pub const JVMTI_HEAP_FILTER_CLASS_UNTAGGED: jint = 0x20;
+pub const JVMTI_VISIT_OBJECTS: jint = 0x100;
+pub const JVMTI_VISIT_ABORT: jint = 0x8000;
+
+pub type jvmtiHeapReferenceKind = u32;
+pub const JVMTI_HEAP_REFERENCE_CLASS: jvmtiHeapReferenceKind = 1;
+pub const JVMTI_HEAP_REFERENCE_FIELD: jvmtiHeapReferenceKind = 2;
+pub const JVMTI_HEAP_REFERENCE_ARRAY_ELEMENT: jvmtiHeapReferenceKind = 3;
+pub const JVMTI_HEAP_REFERENCE_CLASS_LOADER: jvmtiHeapReferenceKind = 4;
+pub const JVMTI_HEAP_REFERENCE_SIGNERS: jvmtiHeapReferenceKind = 5;
+pub const JVMTI_HEAP_REFERENCE_PROTECTION_DOMAIN: jvmtiHeapReferenceKind = 6;
+pub const JVMTI_HEAP_REFERENCE_INTERFACE: jvmtiHeapReferenceKind = 7;
+pub const JVMTI_HEAP_REFERENCE_STATIC_FIELD: jvmtiHeapReferenceKind = 8;
+pub const JVMTI_HEAP_REFERENCE_CONSTANT_POOL: jvmtiHeapReferenceKind = 9;
+pub const JVMTI_HEAP_REFERENCE_SUPERCLASS: jvmtiHeapReferenceKind = 10;
+pub const JVMTI_HEAP_REFERENCE_JNI_GLOBAL: jvmtiHeapReferenceKind = 21;
+pub const JVMTI_HEAP_REFERENCE_SYSTEM_CLASS: jvmtiHeapReferenceKind = 22;
+pub const JVMTI_HEAP_REFERENCE_MONITOR: jvmtiHeapReferenceKind = 23;
+pub const JVMTI_HEAP_REFERENCE_STACK_LOCAL: jvmtiHeapReferenceKind = 24;
+pub const JVMTI_HEAP_REFERENCE_JNI_LOCAL: jvmtiHeapReferenceKind = 25;
+pub const JVMTI_HEAP_REFERENCE_THREAD: jvmtiHeapReferenceKind = 26;
+pub const JVMTI_HEAP_REFERENCE_OTHER: jvmtiHeapReferenceKind = 27;
+
+pub type jvmtiPrimitiveType = u32;
+pub const JVMTI_PRIMITIVE_TYPE_BOOLEAN: jvmtiPrimitiveType = 90;
+pub const JVMTI_PRIMITIVE_TYPE_BYTE: jvmtiPrimitiveType = 66;
+pub const JVMTI_PRIMITIVE_TYPE_CHAR: jvmtiPrimitiveType = 67;
+pub const JVMTI_PRIMITIVE_TYPE_SHORT: jvmtiPrimitiveType = 83;
+pub const JVMTI_PRIMITIVE_TYPE_INT: jvmtiPrimitiveType = 73;
+pub const JVMTI_PRIMITIVE_TYPE_LONG: jvmtiPrimitiveType = 74;
+pub const JVMTI_PRIMITIVE_TYPE_FLOAT: jvmtiPrimitiveType = 70;
+pub const JVMTI_PRIMITIVE_TYPE_DOUBLE: jvmtiPrimitiveType = 68;
 
 // --- Heap Object Filters ---
-pub const JVMTI_HEAP_OBJECT_EITHER: jint = 3;
-pub const JVMTI_HEAP_OBJECT_TAGGED: jint = 1;
-pub const JVMTI_HEAP_OBJECT_UNTAGGED: jint = 2;
+pub type jvmtiHeapObjectFilter = u32;
+pub const JVMTI_HEAP_OBJECT_EITHER: jvmtiHeapObjectFilter = 3;
+pub const JVMTI_HEAP_OBJECT_TAGGED: jvmtiHeapObjectFilter = 1;
+pub const JVMTI_HEAP_OBJECT_UNTAGGED: jvmtiHeapObjectFilter = 2;
+
+pub type jvmtiHeapRootKind = u32;
+pub const JVMTI_HEAP_ROOT_JNI_GLOBAL: jvmtiHeapRootKind = 1;
+pub const JVMTI_HEAP_ROOT_SYSTEM_CLASS: jvmtiHeapRootKind = 2;
+pub const JVMTI_HEAP_ROOT_MONITOR: jvmtiHeapRootKind = 3;
+pub const JVMTI_HEAP_ROOT_STACK_LOCAL: jvmtiHeapRootKind = 4;
+pub const JVMTI_HEAP_ROOT_JNI_LOCAL: jvmtiHeapRootKind = 5;
+pub const JVMTI_HEAP_ROOT_THREAD: jvmtiHeapRootKind = 6;
+pub const JVMTI_HEAP_ROOT_OTHER: jvmtiHeapRootKind = 7;
+
+pub type jvmtiObjectReferenceKind = u32;
+pub const JVMTI_REFERENCE_CLASS: jvmtiObjectReferenceKind = 1;
+pub const JVMTI_REFERENCE_FIELD: jvmtiObjectReferenceKind = 2;
+pub const JVMTI_REFERENCE_ARRAY_ELEMENT: jvmtiObjectReferenceKind = 3;
+pub const JVMTI_REFERENCE_CLASS_LOADER: jvmtiObjectReferenceKind = 4;
+pub const JVMTI_REFERENCE_SIGNERS: jvmtiObjectReferenceKind = 5;
+pub const JVMTI_REFERENCE_PROTECTION_DOMAIN: jvmtiObjectReferenceKind = 6;
+pub const JVMTI_REFERENCE_INTERFACE: jvmtiObjectReferenceKind = 7;
+pub const JVMTI_REFERENCE_STATIC_FIELD: jvmtiObjectReferenceKind = 8;
+pub const JVMTI_REFERENCE_CONSTANT_POOL: jvmtiObjectReferenceKind = 9;
+
+pub const JVMTI_CLASS_STATUS_VERIFIED: jint = 1;
+pub const JVMTI_CLASS_STATUS_PREPARED: jint = 2;
+pub const JVMTI_CLASS_STATUS_INITIALIZED: jint = 4;
+pub const JVMTI_CLASS_STATUS_ERROR: jint = 8;
+pub const JVMTI_CLASS_STATUS_ARRAY: jint = 16;
+pub const JVMTI_CLASS_STATUS_PRIMITIVE: jint = 32;
 
 // --- Phases ---
-pub const JVMTI_PHASE_ONLOAD: jint = 1;
-pub const JVMTI_PHASE_PRIMORDIAL: jint = 2;
-pub const JVMTI_PHASE_START: jint = 6;
-pub const JVMTI_PHASE_LIVE: jint = 4;
-pub const JVMTI_PHASE_DEAD: jint = 8;
+pub type jvmtiPhase = u32;
+pub const JVMTI_PHASE_ONLOAD: jvmtiPhase = 1;
+pub const JVMTI_PHASE_PRIMORDIAL: jvmtiPhase = 2;
+pub const JVMTI_PHASE_START: jvmtiPhase = 6;
+pub const JVMTI_PHASE_LIVE: jvmtiPhase = 4;
+pub const JVMTI_PHASE_DEAD: jvmtiPhase = 8;
 
-pub const JVMTI_ENABLE: jint = 1;
-pub const JVMTI_DISABLE: jint = 0;
+pub type jvmtiEventMode = u32;
+pub const JVMTI_ENABLE: jvmtiEventMode = 1;
+pub const JVMTI_DISABLE: jvmtiEventMode = 0;
+
+pub type jvmtiParamTypes = u32;
+pub const JVMTI_TYPE_JBYTE: jvmtiParamTypes = 101;
+pub const JVMTI_TYPE_JCHAR: jvmtiParamTypes = 102;
+pub const JVMTI_TYPE_JSHORT: jvmtiParamTypes = 103;
+pub const JVMTI_TYPE_JINT: jvmtiParamTypes = 104;
+pub const JVMTI_TYPE_JLONG: jvmtiParamTypes = 105;
+pub const JVMTI_TYPE_JFLOAT: jvmtiParamTypes = 106;
+pub const JVMTI_TYPE_JDOUBLE: jvmtiParamTypes = 107;
+pub const JVMTI_TYPE_JBOOLEAN: jvmtiParamTypes = 108;
+pub const JVMTI_TYPE_JOBJECT: jvmtiParamTypes = 109;
+pub const JVMTI_TYPE_JTHREAD: jvmtiParamTypes = 110;
+pub const JVMTI_TYPE_JCLASS: jvmtiParamTypes = 111;
+pub const JVMTI_TYPE_JVALUE: jvmtiParamTypes = 112;
+pub const JVMTI_TYPE_JFIELDID: jvmtiParamTypes = 113;
+pub const JVMTI_TYPE_JMETHODID: jvmtiParamTypes = 114;
+pub const JVMTI_TYPE_CCHAR: jvmtiParamTypes = 115;
+pub const JVMTI_TYPE_CVOID: jvmtiParamTypes = 116;
+pub const JVMTI_TYPE_JNIENV: jvmtiParamTypes = 117;
+
+pub type jvmtiParamKind = u32;
+pub const JVMTI_KIND_IN: jvmtiParamKind = 91;
+pub const JVMTI_KIND_IN_PTR: jvmtiParamKind = 92;
+pub const JVMTI_KIND_IN_BUF: jvmtiParamKind = 93;
+pub const JVMTI_KIND_ALLOC_BUF: jvmtiParamKind = 94;
+pub const JVMTI_KIND_ALLOC_ALLOC_BUF: jvmtiParamKind = 95;
+pub const JVMTI_KIND_OUT: jvmtiParamKind = 96;
+pub const JVMTI_KIND_OUT_BUF: jvmtiParamKind = 97;
+
+pub type jvmtiTimerKind = u32;
+pub const JVMTI_TIMER_USER_CPU: jvmtiTimerKind = 30;
+pub const JVMTI_TIMER_TOTAL_CPU: jvmtiTimerKind = 31;
+pub const JVMTI_TIMER_ELAPSED: jvmtiTimerKind = 32;
+
+pub type jvmtiVerboseFlag = u32;
+pub const JVMTI_VERBOSE_OTHER: jvmtiVerboseFlag = 0;
+pub const JVMTI_VERBOSE_GC: jvmtiVerboseFlag = 1;
+pub const JVMTI_VERBOSE_CLASS: jvmtiVerboseFlag = 2;
+pub const JVMTI_VERBOSE_JNI: jvmtiVerboseFlag = 4;
+
+pub type jvmtiJlocationFormat = u32;
+pub const JVMTI_JLOCATION_JVMBCI: jvmtiJlocationFormat = 1;
+pub const JVMTI_JLOCATION_MACHINEPC: jvmtiJlocationFormat = 2;
+pub const JVMTI_JLOCATION_OTHER: jvmtiJlocationFormat = 0;
+
+pub const JVMTI_RESOURCE_EXHAUSTED_OOM_ERROR: jint = 0x0001;
+pub const JVMTI_RESOURCE_EXHAUSTED_JAVA_HEAP: jint = 0x0002;
+pub const JVMTI_RESOURCE_EXHAUSTED_THREADS: jint = 0x0004;
 
 // --- Error Codes ---
 /// Open JVMTI error domain.
@@ -189,6 +356,70 @@ impl jvmtiError {
     }
 }
 
+// Header-compatible error names. The associated constants above provide the
+// ergonomic Rust spelling while these preserve the raw JVMTI surface.
+pub const JVMTI_ERROR_NONE: jvmtiError = jvmtiError::NONE;
+pub const JVMTI_ERROR_INVALID_THREAD: jvmtiError = jvmtiError::INVALID_THREAD;
+pub const JVMTI_ERROR_INVALID_THREAD_GROUP: jvmtiError = jvmtiError::INVALID_THREAD_GROUP;
+pub const JVMTI_ERROR_INVALID_PRIORITY: jvmtiError = jvmtiError::INVALID_PRIORITY;
+pub const JVMTI_ERROR_THREAD_NOT_SUSPENDED: jvmtiError = jvmtiError::THREAD_NOT_SUSPENDED;
+pub const JVMTI_ERROR_THREAD_SUSPENDED: jvmtiError = jvmtiError::THREAD_SUSPENDED;
+pub const JVMTI_ERROR_THREAD_NOT_ALIVE: jvmtiError = jvmtiError::THREAD_NOT_ALIVE;
+pub const JVMTI_ERROR_INVALID_OBJECT: jvmtiError = jvmtiError::INVALID_OBJECT;
+pub const JVMTI_ERROR_INVALID_CLASS: jvmtiError = jvmtiError::INVALID_CLASS;
+pub const JVMTI_ERROR_CLASS_NOT_PREPARED: jvmtiError = jvmtiError::CLASS_NOT_PREPARED;
+pub const JVMTI_ERROR_INVALID_METHODID: jvmtiError = jvmtiError::INVALID_METHODID;
+pub const JVMTI_ERROR_INVALID_LOCATION: jvmtiError = jvmtiError::INVALID_LOCATION;
+pub const JVMTI_ERROR_INVALID_FIELDID: jvmtiError = jvmtiError::INVALID_FIELDID;
+pub const JVMTI_ERROR_INVALID_MODULE: jvmtiError = jvmtiError::INVALID_MODULE;
+pub const JVMTI_ERROR_NO_MORE_FRAMES: jvmtiError = jvmtiError::NO_MORE_FRAMES;
+pub const JVMTI_ERROR_OPAQUE_FRAME: jvmtiError = jvmtiError::OPAQUE_FRAME;
+pub const JVMTI_ERROR_TYPE_MISMATCH: jvmtiError = jvmtiError::TYPE_MISMATCH;
+pub const JVMTI_ERROR_INVALID_SLOT: jvmtiError = jvmtiError::INVALID_SLOT;
+pub const JVMTI_ERROR_DUPLICATE: jvmtiError = jvmtiError::DUPLICATE;
+pub const JVMTI_ERROR_NOT_FOUND: jvmtiError = jvmtiError::NOT_FOUND;
+pub const JVMTI_ERROR_INVALID_MONITOR: jvmtiError = jvmtiError::INVALID_MONITOR;
+pub const JVMTI_ERROR_NOT_MONITOR_OWNER: jvmtiError = jvmtiError::NOT_MONITOR_OWNER;
+pub const JVMTI_ERROR_INTERRUPT: jvmtiError = jvmtiError::INTERRUPT;
+pub const JVMTI_ERROR_INVALID_CLASS_FORMAT: jvmtiError = jvmtiError::INVALID_CLASS_FORMAT;
+pub const JVMTI_ERROR_CIRCULAR_CLASS_DEFINITION: jvmtiError = jvmtiError::CIRCULAR_CLASS_DEFINITION;
+pub const JVMTI_ERROR_FAILS_VERIFICATION: jvmtiError = jvmtiError::FAILS_VERIFICATION;
+pub const JVMTI_ERROR_UNSUPPORTED_REDEFINITION_METHOD_ADDED: jvmtiError =
+    jvmtiError::UNSUPPORTED_REDEFINITION_METHOD_ADDED;
+pub const JVMTI_ERROR_UNSUPPORTED_REDEFINITION_SCHEMA_CHANGED: jvmtiError =
+    jvmtiError::UNSUPPORTED_REDEFINITION_SCHEMA_CHANGED;
+pub const JVMTI_ERROR_INVALID_TYPESTATE: jvmtiError = jvmtiError::INVALID_TYPESTATE;
+pub const JVMTI_ERROR_UNSUPPORTED_REDEFINITION_HIERARCHY_CHANGED: jvmtiError =
+    jvmtiError::UNSUPPORTED_REDEFINITION_HIERARCHY_CHANGED;
+pub const JVMTI_ERROR_UNSUPPORTED_REDEFINITION_METHOD_DELETED: jvmtiError =
+    jvmtiError::UNSUPPORTED_REDEFINITION_METHOD_DELETED;
+pub const JVMTI_ERROR_UNSUPPORTED_VERSION: jvmtiError = jvmtiError::UNSUPPORTED_VERSION;
+pub const JVMTI_ERROR_NAMES_DONT_MATCH: jvmtiError = jvmtiError::NAMES_DONT_MATCH;
+pub const JVMTI_ERROR_UNSUPPORTED_REDEFINITION_CLASS_MODIFIERS_CHANGED: jvmtiError =
+    jvmtiError::UNSUPPORTED_REDEFINITION_CLASS_MODIFIERS_CHANGED;
+pub const JVMTI_ERROR_UNSUPPORTED_REDEFINITION_METHOD_MODIFIERS_CHANGED: jvmtiError =
+    jvmtiError::UNSUPPORTED_REDEFINITION_METHOD_MODIFIERS_CHANGED;
+pub const JVMTI_ERROR_UNSUPPORTED_REDEFINITION_CLASS_ATTRIBUTE_CHANGED: jvmtiError =
+    jvmtiError::UNSUPPORTED_REDEFINITION_CLASS_ATTRIBUTE_CHANGED;
+pub const JVMTI_ERROR_UNSUPPORTED_OPERATION: jvmtiError = jvmtiError::UNSUPPORTED_OPERATION;
+pub const JVMTI_ERROR_UNMODIFIABLE_CLASS: jvmtiError = jvmtiError::UNMODIFIABLE_CLASS;
+pub const JVMTI_ERROR_UNMODIFIABLE_MODULE: jvmtiError = jvmtiError::UNMODIFIABLE_MODULE;
+pub const JVMTI_ERROR_NOT_AVAILABLE: jvmtiError = jvmtiError::NOT_AVAILABLE;
+pub const JVMTI_ERROR_MUST_POSSESS_CAPABILITY: jvmtiError = jvmtiError::MUST_POSSESS_CAPABILITY;
+pub const JVMTI_ERROR_NULL_POINTER: jvmtiError = jvmtiError::NULL_POINTER;
+pub const JVMTI_ERROR_ABSENT_INFORMATION: jvmtiError = jvmtiError::ABSENT_INFORMATION;
+pub const JVMTI_ERROR_INVALID_EVENT_TYPE: jvmtiError = jvmtiError::INVALID_EVENT_TYPE;
+pub const JVMTI_ERROR_ILLEGAL_ARGUMENT: jvmtiError = jvmtiError::ILLEGAL_ARGUMENT;
+pub const JVMTI_ERROR_NATIVE_METHOD: jvmtiError = jvmtiError::NATIVE_METHOD;
+pub const JVMTI_ERROR_CLASS_LOADER_UNSUPPORTED: jvmtiError = jvmtiError::CLASS_LOADER_UNSUPPORTED;
+pub const JVMTI_ERROR_OUT_OF_MEMORY: jvmtiError = jvmtiError::OUT_OF_MEMORY;
+pub const JVMTI_ERROR_ACCESS_DENIED: jvmtiError = jvmtiError::ACCESS_DENIED;
+pub const JVMTI_ERROR_WRONG_PHASE: jvmtiError = jvmtiError::WRONG_PHASE;
+pub const JVMTI_ERROR_INTERNAL: jvmtiError = jvmtiError::INTERNAL;
+pub const JVMTI_ERROR_UNATTACHED_THREAD: jvmtiError = jvmtiError::UNATTACHED_THREAD;
+pub const JVMTI_ERROR_INVALID_ENVIRONMENT: jvmtiError = jvmtiError::INVALID_ENVIRONMENT;
+pub const JVMTI_ERROR_MAX: jvmtiError = jvmtiError::MAX;
+
 /// Return the standard JVMTI error constant name.
 pub const fn error_name(error: jvmtiError) -> &'static str {
     match error.raw() {
@@ -262,6 +493,8 @@ impl fmt::Display for jvmtiError {
 }
 
 pub type jlocation = jlong;
+pub type jthreadGroup = jobject;
+pub type jniNativeInterface = JNINativeInterface_;
 pub type jrawMonitorID = *mut c_void;
 
 #[repr(C)]
@@ -313,7 +546,7 @@ pub struct jvmtiThreadInfo {
     pub name: *mut std::os::raw::c_char,
     pub priority: jint,
     pub is_daemon: jboolean,
-    pub thread_group: jobject,
+    pub thread_group: jthreadGroup,
     pub context_class_loader: jobject,
 }
 
@@ -337,15 +570,10 @@ pub struct jvmtiClassDefinition {
     pub class_bytes: *const std::os::raw::c_uchar,
 }
 
-pub type jvmtiIterationControl = jint;
-pub const JVMTI_ITERATION_CONTINUE: jint = 1;
-pub const JVMTI_ITERATION_IGNORE: jint = 2;
-pub const JVMTI_ITERATION_ABORT: jint = 0;
-
-pub type jvmtiHeapReferenceKind = jint;
-pub type jvmtiHeapRootKind = jint;
-pub type jvmtiObjectReferenceKind = jint;
-pub type jvmtiPrimitiveType = jint;
+pub type jvmtiIterationControl = u32;
+pub const JVMTI_ITERATION_CONTINUE: jvmtiIterationControl = 1;
+pub const JVMTI_ITERATION_IGNORE: jvmtiIterationControl = 2;
+pub const JVMTI_ITERATION_ABORT: jvmtiIterationControl = 0;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Default)]
@@ -534,7 +762,7 @@ pub struct jvmtiTimerInfo {
     pub max_value: jlong,
     pub may_skip_forward: jboolean,
     pub may_skip_backward: jboolean,
-    pub kind: jint,
+    pub kind: jvmtiTimerKind,
     pub reserved1: jlong,
     pub reserved2: jlong,
 }
@@ -555,8 +783,8 @@ pub struct jvmtiExtensionFunctionInfo {
 #[derive(Copy, Clone, Debug)]
 pub struct jvmtiParamInfo {
     pub name: *mut std::os::raw::c_char,
-    pub kind: jint,
-    pub base_type: jint,
+    pub kind: jvmtiParamKind,
+    pub base_type: jvmtiParamTypes,
     pub null_ok: jboolean,
 }
 
@@ -593,15 +821,25 @@ pub struct jvmtiStackInfo {
 // --- Capabilities ---
 #[repr(C)]
 #[derive(Debug, Copy, Clone, Default)]
+#[non_exhaustive]
 pub struct jvmtiCapabilities {
     bits: [u32; 4],
 }
 
 impl jvmtiCapabilities {
     // --- Helper Methods ---
+    const fn storage_bit_index(bit_offset: usize, big_endian: bool) -> usize {
+        let bit_in_word = bit_offset % 32;
+        if big_endian {
+            31 - bit_in_word
+        } else {
+            bit_in_word
+        }
+    }
+
     fn set_bit(&mut self, bit_offset: usize, value: bool) {
         let word_index = bit_offset / 32;
-        let bit_index = bit_offset % 32;
+        let bit_index = Self::storage_bit_index(bit_offset, cfg!(target_endian = "big"));
         if value {
             self.bits[word_index] |= 1 << bit_index;
         } else {
@@ -611,7 +849,7 @@ impl jvmtiCapabilities {
 
     fn get_bit(&self, bit_offset: usize) -> bool {
         let word_index = bit_offset / 32;
-        let bit_index = bit_offset % 32;
+        let bit_index = Self::storage_bit_index(bit_offset, cfg!(target_endian = "big"));
         (self.bits[word_index] & (1 << bit_index)) != 0
     }
 
@@ -1063,8 +1301,8 @@ impl fmt::Display for jvmtiCapabilities {
 
 pub type JvmtiSetEventNotificationModeFn = unsafe extern "C" fn(
     env: *mut jvmtiEnv,
-    mode: jint,
-    event_type: u32,
+    mode: jvmtiEventMode,
+    event_type: jvmtiEvent,
     event_thread: jthread,
     ...
 ) -> jvmtiError;
@@ -1108,27 +1346,27 @@ pub type JvmtiGetCurrentContendedMonitorFn = unsafe extern "system" fn(
 pub type JvmtiRunAgentThreadFn = unsafe extern "system" fn(
     env: *mut jvmtiEnv,
     thread: jthread,
-    proc: jvmtiStartFunction,
+    proc: Option<jvmtiStartFunction>,
     arg: *const c_void,
     priority: jint,
 ) -> jvmtiError;
 pub type JvmtiGetTopThreadGroupsFn = unsafe extern "system" fn(
     env: *mut jvmtiEnv,
     group_count_ptr: *mut jint,
-    groups_ptr: *mut *mut jobject,
+    groups_ptr: *mut *mut jthreadGroup,
 ) -> jvmtiError;
 pub type JvmtiGetThreadGroupInfoFn = unsafe extern "system" fn(
     env: *mut jvmtiEnv,
-    group: jobject,
+    group: jthreadGroup,
     info_ptr: *mut jvmtiThreadGroupInfo,
 ) -> jvmtiError;
 pub type JvmtiGetThreadGroupChildrenFn = unsafe extern "system" fn(
     env: *mut jvmtiEnv,
-    group: jobject,
+    group: jthreadGroup,
     thread_count_ptr: *mut jint,
     threads_ptr: *mut *mut jthread,
     group_count_ptr: *mut jint,
-    groups_ptr: *mut *mut jobject,
+    groups_ptr: *mut *mut jthreadGroup,
 ) -> jvmtiError;
 pub type JvmtiGetFrameCountFn = unsafe extern "system" fn(
     env: *mut jvmtiEnv,
@@ -1570,27 +1808,27 @@ pub type JvmtiForceGarbageCollectionFn =
 pub type JvmtiIterateOverObjectsReachableFromObjectFn = unsafe extern "system" fn(
     env: *mut jvmtiEnv,
     object: jobject,
-    object_reference_callback: jvmtiObjectReferenceCallback,
+    object_reference_callback: Option<jvmtiObjectReferenceCallback>,
     user_data: *const c_void,
 ) -> jvmtiError;
 pub type JvmtiIterateOverReachableObjectsFn = unsafe extern "system" fn(
     env: *mut jvmtiEnv,
-    heap_root_callback: jvmtiHeapRootCallback,
-    stack_ref_callback: jvmtiStackReferenceCallback,
-    object_ref_callback: jvmtiObjectReferenceCallback,
+    heap_root_callback: Option<jvmtiHeapRootCallback>,
+    stack_ref_callback: Option<jvmtiStackReferenceCallback>,
+    object_ref_callback: Option<jvmtiObjectReferenceCallback>,
     user_data: *const c_void,
 ) -> jvmtiError;
 pub type JvmtiIterateOverHeapFn = unsafe extern "system" fn(
     env: *mut jvmtiEnv,
-    object_filter: jint,
-    heap_object_callback: jvmtiHeapObjectCallback,
+    object_filter: jvmtiHeapObjectFilter,
+    heap_object_callback: Option<jvmtiHeapObjectCallback>,
     user_data: *const c_void,
 ) -> jvmtiError;
 pub type JvmtiIterateOverInstancesOfClassFn = unsafe extern "system" fn(
     env: *mut jvmtiEnv,
     klass: jclass,
-    object_filter: jint,
-    heap_object_callback: jvmtiHeapObjectCallback,
+    object_filter: jvmtiHeapObjectFilter,
+    heap_object_callback: Option<jvmtiHeapObjectCallback>,
     user_data: *const c_void,
 ) -> jvmtiError;
 pub type JvmtiGetObjectsWithTagsFn = unsafe extern "system" fn(
@@ -1640,7 +1878,7 @@ pub type JvmtiSetEventCallbacksFn = unsafe extern "system" fn(
     size_of_callbacks: jint,
 ) -> jvmtiError;
 pub type JvmtiGenerateEventsFn =
-    unsafe extern "system" fn(env: *mut jvmtiEnv, event_type: u32) -> jvmtiError;
+    unsafe extern "system" fn(env: *mut jvmtiEnv, event_type: jvmtiEvent) -> jvmtiError;
 pub type JvmtiGetExtensionFunctionsFn = unsafe extern "system" fn(
     env: *mut jvmtiEnv,
     extension_count_ptr: *mut jint,
@@ -1662,8 +1900,10 @@ pub type JvmtiGetErrorNameFn = unsafe extern "system" fn(
     error: jvmtiError,
     name_ptr: *mut *mut std::os::raw::c_char,
 ) -> jvmtiError;
-pub type JvmtiGetJLocationFormatFn =
-    unsafe extern "system" fn(env: *mut jvmtiEnv, format_ptr: *mut jint) -> jvmtiError;
+pub type JvmtiGetJLocationFormatFn = unsafe extern "system" fn(
+    env: *mut jvmtiEnv,
+    format_ptr: *mut jvmtiJlocationFormat,
+) -> jvmtiError;
 pub type JvmtiGetSystemPropertiesFn = unsafe extern "system" fn(
     env: *mut jvmtiEnv,
     count_ptr: *mut jint,
@@ -1680,7 +1920,7 @@ pub type JvmtiSetSystemPropertyFn = unsafe extern "system" fn(
     value: *const std::os::raw::c_char,
 ) -> jvmtiError;
 pub type JvmtiGetPhaseFn =
-    unsafe extern "system" fn(env: *mut jvmtiEnv, phase_ptr: *mut jint) -> jvmtiError;
+    unsafe extern "system" fn(env: *mut jvmtiEnv, phase_ptr: *mut jvmtiPhase) -> jvmtiError;
 pub type JvmtiGetCurrentThreadCpuTimerInfoFn =
     unsafe extern "system" fn(env: *mut jvmtiEnv, info_ptr: *mut jvmtiTimerInfo) -> jvmtiError;
 pub type JvmtiGetCurrentThreadCpuTimeFn =
@@ -1731,8 +1971,11 @@ pub type JvmtiAddToBootstrapClassLoaderSearchFn = unsafe extern "system" fn(
     env: *mut jvmtiEnv,
     segment: *const std::os::raw::c_char,
 ) -> jvmtiError;
-pub type JvmtiSetVerboseFlagFn =
-    unsafe extern "system" fn(env: *mut jvmtiEnv, flag: jint, value: jboolean) -> jvmtiError;
+pub type JvmtiSetVerboseFlagFn = unsafe extern "system" fn(
+    env: *mut jvmtiEnv,
+    flag: jvmtiVerboseFlag,
+    value: jboolean,
+) -> jvmtiError;
 pub type JvmtiAddToSystemClassLoaderSearchFn = unsafe extern "system" fn(
     env: *mut jvmtiEnv,
     segment: *const std::os::raw::c_char,
@@ -2006,8 +2249,50 @@ pub type JvmtiVirtualThreadEndFn = unsafe extern "system" fn(
     virtual_thread: jthread,
 );
 
+// Header-compatible callback typedef names. The `Jvmti*Fn` spellings remain
+// useful implementation names; these aliases make the raw module mirror
+// `jvmti.h` without requiring users to translate the native API vocabulary.
+pub type jvmtiEventReserved = Option<JvmtiEventReservedFn>;
+pub type jvmtiEventBreakpoint = Option<JvmtiBreakpointFn>;
+pub type jvmtiEventClassFileLoadHook = Option<JvmtiClassFileLoadHookFn>;
+pub type jvmtiEventClassLoad = Option<JvmtiClassLoadFn>;
+pub type jvmtiEventClassPrepare = Option<JvmtiClassPrepareFn>;
+pub type jvmtiEventCompiledMethodLoad = Option<JvmtiCompiledMethodLoadFn>;
+pub type jvmtiEventCompiledMethodUnload = Option<JvmtiCompiledMethodUnloadFn>;
+pub type jvmtiEventDataDumpRequest = Option<JvmtiDataDumpRequestFn>;
+pub type jvmtiEventDynamicCodeGenerated = Option<JvmtiDynamicCodeGeneratedFn>;
+pub type jvmtiEventException = Option<JvmtiExceptionFn>;
+pub type jvmtiEventExceptionCatch = Option<JvmtiExceptionCatchFn>;
+pub type jvmtiEventFieldAccess = Option<JvmtiFieldAccessFn>;
+pub type jvmtiEventFieldModification = Option<JvmtiFieldModificationFn>;
+pub type jvmtiEventFramePop = Option<JvmtiFramePopFn>;
+pub type jvmtiEventGarbageCollectionFinish = Option<JvmtiGarbageCollectionFinishFn>;
+pub type jvmtiEventGarbageCollectionStart = Option<JvmtiGarbageCollectionStartFn>;
+pub type jvmtiEventMethodEntry = Option<JvmtiMethodEntryFn>;
+pub type jvmtiEventMethodExit = Option<JvmtiMethodExitFn>;
+pub type jvmtiEventMonitorContendedEnter = Option<JvmtiMonitorContendedEnterFn>;
+pub type jvmtiEventMonitorContendedEntered = Option<JvmtiMonitorContendedEnteredFn>;
+pub type jvmtiEventMonitorWait = Option<JvmtiMonitorWaitFn>;
+pub type jvmtiEventMonitorWaited = Option<JvmtiMonitorWaitedFn>;
+pub type jvmtiEventNativeMethodBind = Option<JvmtiNativeMethodBindFn>;
+pub type jvmtiEventObjectFree = Option<JvmtiObjectFreeFn>;
+pub type jvmtiEventResourceExhausted = Option<JvmtiResourceExhaustedFn>;
+pub type jvmtiEventSampledObjectAlloc = Option<JvmtiSampledObjectAllocFn>;
+pub type jvmtiEventSingleStep = Option<JvmtiSingleStepFn>;
+pub type jvmtiEventThreadEnd = Option<JvmtiThreadEndFn>;
+pub type jvmtiEventThreadStart = Option<JvmtiThreadStartFn>;
+pub type jvmtiEventVMDeath = Option<JvmtiVMDeathFn>;
+pub type jvmtiEventVMInit = Option<JvmtiVMInitFn>;
+pub type jvmtiEventVMObjectAlloc = Option<JvmtiVMObjectAllocFn>;
+pub type jvmtiEventVMStart = Option<JvmtiVMStartFn>;
+pub type jvmtiEventVirtualThreadEnd = Option<JvmtiVirtualThreadEndFn>;
+pub type jvmtiEventVirtualThreadStart = Option<JvmtiVirtualThreadStartFn>;
+
+pub type jvmtiInterface_1 = jvmtiInterface_1_;
+
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
+#[non_exhaustive]
 pub struct jvmtiInterface_1_ {
     /*   1:  RESERVED */
     pub reserved1: *mut c_void,
@@ -2330,6 +2615,7 @@ pub struct jvmtiEnv {
 
 #[repr(C)]
 #[derive(Copy, Clone, Default, Debug)]
+#[non_exhaustive]
 pub struct jvmtiEventCallbacks {
     pub VMInit: Option<JvmtiVMInitFn>,
     pub VMDeath: Option<JvmtiVMDeathFn>,
@@ -2412,4 +2698,32 @@ pub const fn event_callbacks_size_for_feature(feature: u16) -> jint {
         35 // Through VMObjectAlloc (event 84).
     };
     (slots * std::mem::size_of::<Option<JvmtiEventReservedFn>>()) as jint
+}
+
+#[cfg(test)]
+mod tests {
+    use super::jvmtiCapabilities;
+
+    #[test]
+    fn capability_bit_numbering_matches_little_and_big_endian_c_bitfields() {
+        assert_eq!(jvmtiCapabilities::storage_bit_index(0, false), 0);
+        assert_eq!(jvmtiCapabilities::storage_bit_index(31, false), 31);
+        assert_eq!(jvmtiCapabilities::storage_bit_index(32, false), 0);
+
+        assert_eq!(jvmtiCapabilities::storage_bit_index(0, true), 31);
+        assert_eq!(jvmtiCapabilities::storage_bit_index(31, true), 0);
+        assert_eq!(jvmtiCapabilities::storage_bit_index(32, true), 31);
+    }
+
+    #[test]
+    fn changing_a_known_capability_preserves_unknown_future_bits() {
+        let mut capabilities = jvmtiCapabilities {
+            bits: [u32::MAX; 4],
+        };
+        capabilities.set_can_tag_objects(false);
+
+        let expected_bit = jvmtiCapabilities::storage_bit_index(0, cfg!(target_endian = "big"));
+        assert_eq!(capabilities.bits[0], !(1 << expected_bit));
+        assert_eq!(capabilities.bits[1..], [u32::MAX; 3]);
+    }
 }

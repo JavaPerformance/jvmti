@@ -1,11 +1,13 @@
-# Compatibility Matrix (JDK 8-28)
+# Compatibility Matrix (JDK 8-28 Source ABI; Live Through JDK 27)
 
 ## Rust Toolchain Versus JVM Runtime
 
 Version 3.0 requires Rust 1.85 or newer and uses Edition 2024. That requirement
 applies when compiling the Rust crate; it does not raise the minimum Java
-runtime. One resulting native agent can still run against the audited JDK 8-28
-matrix, subject to the runtime feature gates described below.
+runtime. One resulting native agent uses the audited JDK 8-28 table prefixes,
+subject to the runtime feature gates described below. Live callback delivery
+has been exercised on installed JDK 8, 11, 17, 21, 25, and 27 runtimes. JDK 28
+is source/ABI evidence plus preview design work, not yet a live runtime claim.
 
 The repository tests the declared Rust 1.85 floor and current stable Rust
 separately. Raising the MSRV is a deliberate compatibility change and must be
@@ -111,6 +113,17 @@ All 34 non-reserved callbacks are invoked by the Rust sentinel suite. It
 verifies every payload field, the exact callback JVM TI environment, whether
 JNI is present for the phase, mutable callback outputs, and panic containment.
 
+The pinned current-source gate also assigns every native field to the Rust
+field type at compile time: 237 JNI native-table slots, 8 JNI invocation-table
+slots, 156 JVM TI function-table slots, and 39 JVM TI callback-table slots.
+That is 440 exact signatures. A separate gate checks 31 public native records
+and 562 field offsets in addition to size, alignment, record kind, and order.
+
+The ABI matrix includes Linux x86-64 and AArch64. A host C-to-Rust-to-C proof
+for JNI `...V` calls verifies the platform `va_list` calling convention rather
+than assuming it is pointer-shaped. Capability tests also model both little-
+and big-endian C bitfield numbering and preserve unknown future bits.
+
 ## Exact Release Versus Interface Milestone
 
 `GetVersionNumber` can establish whether a JVM TI interface feature is safe to
@@ -122,7 +135,7 @@ conversion.
 
 ## JDK 29 Policy
 
-As of 2026-08-17 there is no separately identifiable OpenJDK 29 project,
+As of 2026-08-18 there is no separately identifiable OpenJDK 29 project,
 branch, tag, or header set to verify. JDK 29 support is not inferred from JDK
 28 source. Before claiming JDK 29 support:
 
@@ -138,13 +151,22 @@ branch, tag, or header set to verify. JDK 29 support is not inferred from JDK
 # Exact C/Rust proof against every pinned JDK 8-28 header generation.
 scripts/check-jdk-abi.sh --all-releases
 
+# Complete latest-source signature, layout, constant, inventory, and bit proof.
+scripts/check-pinned-jdk-abi.sh 28
+
 # Portable feature, ownership, layout, and callback tests.
 cargo test --test abi_conformance --test jvmti_event_abi \
   --test callback_fidelity --test version_gating --test ownership
 
 # Real callback delivery on installed JVMs.
 scripts/prove-event-callback-matrix.sh
+scripts/prove-mutf8-live.sh
+scripts/prove-repeated-attach-live.sh
+scripts/prove-heap-graph-live.sh
+scripts/prove-callback-allocation-free.sh
 ```
 
 The external-header test is opt-in so crates.io consumers do not need a local
-JDK or C compiler merely to build the crate.
+JDK or C compiler merely to build the crate. Repository conformance CI uses an
+external `bindgen` executable as an independent oracle; bindgen is not a Cargo
+dependency and is not needed by crate consumers.

@@ -4,11 +4,14 @@
 
 ### Breaking changes
 1. Replaced reduced callbacks and parallel `*_with_jvmti` callbacks with one canonical callback per event: `CallbackContext` plus a complete typed event payload.
-2. Replaced raw lifecycle arguments with `AgentLoadContext` and `AgentUnloadContext`; option bytes are preserved exactly and UTF-8 decoding is explicit.
+2. Replaced raw lifecycle arguments with `AgentLoadContext` and `AgentUnloadContext`; option bytes are preserved exactly and Java Modified UTF-8 decoding is explicit.
 3. Changed `Jvmti::new` to accept a trusted callback-scoped `JavaVmRef`; arbitrary raw VM construction is now explicitly unsafe.
 4. Changed `Jvmti::allocate` to return `JvmtiAllocation`; raw allocation/deallocation is explicitly unsafe.
 5. Changed `Jvmti::dispose_environment` to consume the wrapper and `get_jni_function_table` to return an owned allocation.
-6. Replaced safe `LocalRef::new` adoption of arbitrary raw references with unsafe `LocalRef::from_raw`, and made `GlobalRef::new` unsafe because it consumes a caller-supplied local reference.
+6. Replaced safe `LocalRef::new` adoption of arbitrary raw references with
+   unsafe `LocalRef::from_raw`, and made `GlobalRef::new` unsafe and fallible
+   because it accepts a caller-supplied raw local handle and must acquire the
+   owning VM before creating the separate global reference.
 7. Marked JNI and JVM TI wrapper operations that depend on caller-supplied raw-handle invariants as `unsafe`. The exhaustive method inventory is in `docs/MIGRATING_2_TO_3.md`.
 8. Corrected public raw `sys::jvmti` declarations whose 2.x representation or ABI was wrong, including the open `jvmtiError` domain, modern and legacy heap callbacks, timer and stack layouts, extension callbacks, `jvmtiStartFunction`, variadic event notification, virtual-thread exception lists, and JNI table indirection.
 9. Changed `suspend_all_virtual_threads` and `resume_all_virtual_threads` to accept an exception-thread slice and corrected `run_agent_thread` to use the three-argument native callback.
@@ -16,6 +19,20 @@
 11. Renamed raw `jvmtiExtensionParamInfo` to the header-defined `jvmtiParamInfo`, replaced `jvmtiObjectCallback` with the corrected legacy `jvmtiHeapObjectCallback`, and replaced the incorrect object-reference metadata family with `jvmtiHeapReferenceInfo`.
 12. Changed `ExtensionFunctionInfo::func` from an untyped pointer to `Option<jvmtiExtensionFunction>` so vendor-defined variadic calls cannot be mistaken for an ordinary safe function.
 13. Raised the minimum supported Rust version to 1.85 and adopted Edition 2024.
+14. Changed class-file `CONSTANT_Utf8` values from plain `String` to
+    `JavaString`, preserving valid unpaired Java UTF-16 surrogate code units.
+15. Changed the open JNI `jobjectRefType` domain from a closed Rust enum to a
+    transparent integer newtype that preserves future VM values.
+16. Corrected nullable raw JVM TI callback parameters to `Option<fn>` and the
+    31 unsuffixed JNI variadic invocation slots from untyped pointers to their
+    exact callable C function types.
+17. Made manual embedded-VM environment and attach/detach methods unsafe;
+    lifetime-bound `AttachedThread` guards and scoped closure helpers remain the
+    safe default.
+18. Marked crate-produced metadata records and extensible high-level enums
+    non-exhaustive so future JDK fields and variants can enter 3.x additively.
+19. Replaced the one-size pointer `va_list` placeholder with target-aware ABI
+    representations, including by-value Linux AArch64 and ARM forms.
 
 See [Migrating From 2.x to 3.0](docs/MIGRATING_2_TO_3.md) for the callback-by-callback table and complete source migration inventory.
 
@@ -32,6 +49,52 @@ See [Migrating From 2.x to 3.0](docs/MIGRATING_2_TO_3.md) for the callback-by-ca
 10. A live callback-dispatch benchmark comparing no agent, an idle Rust agent,
     raw-C no-op JVMTI delivery, Rust no-op dispatch, and Rust relaxed-atomic
     counting under the same non-inlined Java workload.
+11. An owning `WeakGlobalRef` guard and a live counting-allocator proof for the
+    normal callback dispatch path.
+12. Scope-guarded cleanup for successful JVM TI output allocations exposed by
+    the high-level wrapper, direct processing of nested native arrays, and
+    allocation-free `JniEnv::new_string_utf16`.
+13. Single-assignment class transformation output, preventing repeated setter
+    calls from stranding an earlier JVM TI allocation.
+14. A standard-library-only Java Modified UTF-8 codec with exact UTF-16 escape
+    hatches for unpaired surrogates.
+15. Owning `RawMonitor` and `RawMonitorGuard` types with explicit fallible
+    release and best-effort drop cleanup.
+16. Compiler-checked conformance for all 440 JNI/JVM TI table-field signatures,
+    plus exact layout checks for 31 public native records and 562 fields.
+17. Live JVM proofs for Modified UTF-8, repeated dynamic attach, heap traversal,
+    callback delivery, and allocation-free callback dispatch.
+18. Bounded class-file parsing through `ClassFileParseLimits` and
+    `ClassFile::parse_with_limits`, with shared allocation, input-size, and
+    recursive-annotation budgets.
+19. A host C-to-Rust-to-C `va_list` forwarding proof and Linux AArch64 CI for
+    native ABI conformance.
+20. Complete high-level coverage for all fixed-signature JNI operations,
+    including typed `jvalue` (`A`) invocation families; C variadic and
+    `va_list` slots remain deliberate raw-only escape hatches.
+21. Allocation-free `PrimitiveArrayElements`, `PrimitiveArrayCritical`, and
+    `StringCritical` guards that pair every successful JNI native-storage
+    acquisition with exactly one final release.
+22. Owning `LocalFrame` and `JavaMonitorGuard` types for automatic
+    `PopLocalFrame` and `MonitorExit` on early return or panic.
+23. A wrapper-coverage gate that inventories every JNI/JVM TI table and
+    callback slot, requiring each to be wrapped or explicitly reviewed as
+    reserved or raw-only.
+24. Deterministic class-file mutation tests and full installed-runtime corpus
+    parsing, in addition to recursive-attribute, recursive-annotation,
+    input-size, and shared cumulative-allocation budgets.
+25. Fail-closed wrapper-forwarding and public-API-extensibility gates that
+    reject dropped/reordered native arguments, exhaustive future-facing data
+    types, required future agent hooks, and constructible growing native
+    tables.
+26. Packaged downstream canaries for both startup/dynamic-attach agents and
+    embedded-JVM consumers.
+27. A reviewed full-signature 3.0 API baseline, an unsafe-sensitive source
+    baseline, and mandatory SemVer comparison tooling for later 3.x releases.
+28. Release evidence containing SHA-256 checksums, an SPDX 2.3 SBOM, and
+    GitHub build-provenance and SBOM attestations.
+29. A private vulnerability-reporting policy and an independent unsafe/FFI
+    review packet tied to the exact release-candidate commit.
 
 ### Fixed
 1. Corrected raw timer, stack, heap-reference, extension, callback, JNI indirection, and function-table declarations to match upstream headers.
@@ -41,6 +104,32 @@ See [Migrating From 2.x to 3.0](docs/MIGRATING_2_TO_3.md) for the callback-by-ca
 5. Rejected trailing classfile bytes and added truncation coverage for every input boundary.
 6. Kept embedded-JVM invocation option storage alive through VM destruction,
    preventing use-after-free during deferred JVM startup work.
+7. Reused one process-global agent across repeated `Agent_OnAttach` invocations,
+   matching the Attach API lifecycle instead of rejecting a second attach.
+8. Corrected heap traversal control flow to return the JVM TI visit constants,
+   rather than treating ordinary Rust booleans as protocol values.
+9. Distinguished null native metadata strings from malformed Modified UTF-8;
+   malformed successful output now fails explicitly instead of becoming absent.
+10. Retained raw-monitor ownership after failed explicit destroy/exit operations
+    so drop can make one best-effort cleanup attempt.
+11. Corrected JVMTI capability bit numbering on big-endian targets while
+    preserving unknown future bits.
+12. Bound safe embedded-thread environments to their VM and attachment guard,
+    preventing safe use after detach or VM destruction.
+13. Rejected excessive recursive annotation nesting with a typed class-file
+    parse error instead of risking native stack exhaustion.
+14. Removed ordinary UTF-8 assumptions and panic-prone initialization from the
+    shipped startup/dynamic-attach agent template.
+15. Preserved the embedded JVM support allocation when `DestroyJavaVM` fails,
+    preventing a live VM from retaining callbacks or option pointers into an
+    unloaded native library.
+16. Charged failed scalar-string conversion, dynamic attribute names, and
+    dynamic parser errors to the same cumulative class-file allocation budget.
+17. Made OpenJDK ABI source caching commit-aware so changing a pinned revision
+    cannot silently reuse stale downloaded headers.
+18. Made append-only JNI/JVM TI function and callback tables non-exhaustive at
+    the Rust source boundary, allowing future OpenJDK tails to enter 3.x minor
+    releases without changing their native C layout or forcing a 4.0.
 
 ## 2.3.0
 
