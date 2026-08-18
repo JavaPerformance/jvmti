@@ -107,6 +107,31 @@ jobs:
             echo "v3.0.0 is not tagged yet; candidate baseline gate passed"
           fi
 
+  miri-ownership:
+    name: Pinned Miri ownership and Modified UTF-8 proofs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: nightly-2026-08-17
+          components: miri
+      - name: Prepare the pinned Miri sysroot
+        shell: bash
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/target/tool-tmp"
+          TMPDIR="$GITHUB_WORKSPACE/target/tool-tmp" cargo +nightly-2026-08-17 miri setup
+      - name: Check ownership and Modified UTF-8 boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/target/tool-tmp"
+          for test in mutf8 jni_mutf8_validation ownership jni_ownership raw_monitor_ownership; do
+            TMPDIR="$GITHUB_WORKSPACE/target/tool-tmp" \
+              CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target/miri-ci" \
+              cargo +nightly-2026-08-17 miri test --locked --test "$test"
+          done
+
   latest-openjdk-abi:
     name: Pinned OpenJDK 28 complete raw ABI / ${{ matrix.os }}
     runs-on: ${{ matrix.os }}

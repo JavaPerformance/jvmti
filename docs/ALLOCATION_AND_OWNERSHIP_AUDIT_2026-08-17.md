@@ -75,8 +75,10 @@ resource leak, not a production callback or embedded-VM leak.
 Production still deliberately retains the support allocation when a real
 `DestroyJavaVM` fails. Freeing invocation options or unloading `libjvm` while
 that VM remains live would turn an observable bounded retention into a possible
-use-after-free. Scoped Miri proofs also pass for Modified UTF-8 and the JNI/JVM
-TI ownership guards; Miri and AddressSanitizer complement rather than replace
+use-after-free. The pinned Miri suites also pass for Modified UTF-8 validation,
+JVM TI allocation ownership, JNI global/weak/local reference ownership, JNI
+array/string/monitor guards, and raw-monitor ownership. CI repeats these five
+focused suites because Miri and AddressSanitizer complement rather than replace
 the live cross-JDK tests.
 
 ## JNI Allocation Surface
@@ -204,6 +206,9 @@ Explicit ownership escapes remain limited and documented:
 - `scripts/prove-mutf8-live.sh`
 - `cargo test --test raw_monitor_ownership`
 - `cargo test --test jni_ownership`
+- `cargo +nightly-2026-08-17 miri test` for `mutf8`,
+  `jni_mutf8_validation`, `ownership`, `jni_ownership`, and
+  `raw_monitor_ownership`
 
 The host's Valgrind 3.27.1 cannot execute even `/bin/true`; it terminates in the
 dynamic loader with `SIGILL`. No Valgrind result is claimed. Exact deallocation

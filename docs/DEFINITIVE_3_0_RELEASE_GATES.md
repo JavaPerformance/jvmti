@@ -159,8 +159,9 @@ candidate commit:
     compilation run in CI on both Rust 1.85 and current stable, rather than
     relying on one toolchain to stand in for the other.
 21. The complete all-feature test suite passes AddressSanitizer with leak
-    detection. Scoped Miri proofs cover Modified UTF-8 and each ownership guard;
-    neither tool substitutes for the cross-JDK live matrix.
+    detection. Pinned hosted Miri proofs cover Modified UTF-8 validation, JVM TI
+    allocation ownership, JNI reference and guard ownership, and raw-monitor
+    ownership; neither tool substitutes for the cross-JDK live matrix.
 22. `scripts/check-downstream-canaries.sh` compiles startup/attach and embedded
     JVM consumers against the exact packaged crate, not the repository crate.
 23. `scripts/check-public-api-baseline.sh` matches the reviewed 3.0 signature
