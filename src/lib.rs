@@ -15,7 +15,7 @@
 //! not published because the planned ABI, callback, ownership, and lifecycle
 //! corrections required a major-version release under semantic versioning.
 //! Existing agents must migrate their callback implementations and review all
-//! affected unsafe and ownership contracts rather than changing only the Cargo
+//! affected safety and ownership contracts rather than changing only the Cargo
 //! dependency version. See the complete [2.x to 3.0 migration guide] before
 //! upgrading a production agent.
 //!
