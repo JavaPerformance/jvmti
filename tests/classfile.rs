@@ -120,6 +120,24 @@ fn push_attr(out: &mut Vec<u8>, name_index: u16, info: &[u8]) {
     out.extend_from_slice(info);
 }
 
+fn build_class_with_terminal_two_slot_constant(tag: u8) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    u4(&mut bytes, 0xCAFEBABE);
+    u2(&mut bytes, 0);
+    u2(&mut bytes, 52);
+    u2(&mut bytes, 2); // Only constant-pool index 1 is available.
+    u1(&mut bytes, tag);
+    bytes.extend_from_slice(&0_u64.to_be_bytes());
+    u2(&mut bytes, 0x0021);
+    u2(&mut bytes, 0);
+    u2(&mut bytes, 0);
+    u2(&mut bytes, 0);
+    u2(&mut bytes, 0);
+    u2(&mut bytes, 0);
+    u2(&mut bytes, 0);
+    bytes
+}
+
 fn build_test_class() -> Vec<u8> {
     let mut cp = CpBuilder::new();
 
@@ -681,6 +699,16 @@ fn malformed_constant_modified_utf8_is_rejected() {
         ClassFile::parse(&bytes),
         Err(ClassFileError::InvalidUtf8)
     ));
+}
+
+#[test]
+fn terminal_long_and_double_constants_are_rejected() {
+    for tag in [5, 6] {
+        assert!(matches!(
+            ClassFile::parse(&build_class_with_terminal_two_slot_constant(tag)),
+            Err(ClassFileError::InvalidConstantPoolIndex(2))
+        ));
+    }
 }
 
 #[test]

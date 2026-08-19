@@ -6,15 +6,27 @@ stop.
 
 ## Candidate
 
-1. Work from a clean release-candidate commit.
+1. Work from a clean code-candidate commit.
 2. Confirm `Cargo.toml`, `CHANGELOG.md`, and the intended tag agree.
-3. Run `scripts/run-release-gates.sh`.
-4. Review `api/jvmti-bindings-3.0.0.txt` and run
+3. Review `api/jvmti-bindings-3.0.0.txt` and run
    `scripts/check-public-api-baseline.sh`.
-5. Obtain an independent review of `docs/UNSAFE_FFI_REVIEW.md`; the author of
-   the release candidate must not self-approve this gate.
-6. Push the candidate and require every GitHub Actions job to pass on the exact
-   commit.
+4. If the unsafe surface changed, leave the reviewed baseline unchanged and
+   give the independent reviewer both the code candidate and the proposed
+   baseline diff. The author of the candidate must not self-approve this gate.
+5. Record the independent decision in an immutable external review that names
+   the exact code-candidate commit.
+6. After acceptance, regenerate the baseline with
+   `scripts/check-unsafe-surface.py --write` and commit only the reviewed
+   evidence and any explicitly requested corrections.
+7. Have the independent reviewer confirm the final evidence-only delta and
+   record acceptance of the exact final commit in the external review.
+8. Run `scripts/run-release-gates.sh` from that clean final commit.
+9. Push the final commit and require every GitHub Actions job to pass on that
+   exact revision.
+
+Do not try to place a commit's own hash in tracked content. The immutable
+external review, signed tag, and hosted build evidence identify the exact final
+revision without creating a self-referential commit loop.
 
 ## Tag And Evidence
 
@@ -41,6 +53,12 @@ The gate combines `cargo-semver-checks` with a full-signature
 `cargo-public-api` diff. A new JDK may be added only after official source is
 pinned and the ABI, runtime-version, callback, and live-test ledgers are
 extended.
+
+An unavoidable soundness correction may be listed in
+`api/approved-3x-soundness-breaks.json`. The compatibility gate still runs
+`cargo-semver-checks`, parses its complete failure set, and fails unless every
+reported lint/item pair exactly matches that reviewed allowlist. Never disable
+a SemVer lint globally to admit one correction.
 
 ## External Boundaries
 

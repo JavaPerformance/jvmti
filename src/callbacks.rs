@@ -428,8 +428,9 @@ impl<'callback> ClassFileLoadHookEvent<'callback> {
         }
     }
 
-    /// Copies transformed class bytes into JVM TI memory and transfers that
-    /// allocation to the JVM.
+    /// Copies transformed class bytes into JVM TI memory for transfer to the
+    /// JVM after the callback returns normally. The crate trampoline releases
+    /// and clears this pending output if the handler panics.
     pub fn set_transformed_class(
         &mut self,
         context: &CallbackContext<'callback>,

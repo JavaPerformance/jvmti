@@ -27,7 +27,7 @@
 //! - **Zero Third-Party Crates**: Including optional features, tests, tools, and benchmarks
 //! - **Ergonomic API**: High-level wrappers handle strings, arrays, references
 //! - **Type-Safe**: Proper Rust types, `Result` returns, RAII guards
-//! - **Release-Aware**: source-ABI verified against pinned OpenJDK 8-28 revisions and live callback-tested through JDK 27
+//! - **Release-Aware**: source-ABI verified against pinned OpenJDK 8-28 revisions and live callback-tested through JDK 28 preview
 //!
 //! ## Quick Start
 //!
@@ -110,7 +110,7 @@
 //! | [`mod@env`] | **High-level wrappers** - start here for ergonomic APIs |
 //! | [`env::Jvmti`] | JVMTI environment wrapper (153 methods) |
 //! | [`env::JniEnv`] | JNI environment wrapper (60+ methods) |
-//! | [`classfile`] | Class file parser with all Java 8-27 attributes |
+//! | [`classfile`] | Typed JVMS-standard attributes through Java 28; opaque unknown attributes |
 //! | [`mutf8`] | Java Modified UTF-8 and exact UTF-16 conversions |
 //! | [`prelude`] | Recommended imports for agents |
 //! | [`embed`] | Optional JVM embedding helpers (`embed` feature) |
@@ -222,12 +222,13 @@
 //!
 //! | JDK Version | JNI Functions | JVMTI Functions | Notes |
 //! |-------------|---------------|-----------------|-------|
-//! | 8           | 232           | 153             | Baseline |
-//! | 9           | 233           | 156             | +GetModule, +Module functions |
-//! | 11          | 233           | 156             | +SetHeapSamplingInterval |
-//! | 21          | 234           | 156             | +IsVirtualThread, +Virtual thread support |
-//! | 24/25       | 235           | 156             | +GetStringUTFLengthAsLong |
-//! | 27          | 235           | 156             | +ClearAllFramePops (slot 67) |
+//! | 8           | 233           | 155             | Supported baseline |
+//! | 9           | 234           | 155             | +GetModule, +module functions |
+//! | 11          | 234           | 156             | +SetHeapSamplingInterval |
+//! | 21          | 235           | 156             | +IsVirtualThread, virtual threads final |
+//! | 24          | 236           | 156             | +GetStringUTFLengthAsLong |
+//! | 25          | 236           | 156             | +ClearAllFramePops (slot 67) |
+//! | 28 preview  | 237           | 156             | +HasIdentity, value-object semantics |
 
 #[cfg(feature = "advanced")]
 pub mod advanced;
@@ -786,6 +787,7 @@ unsafe extern "system" fn trampoline_class_file_load_hook(
     if !new_class_data.is_null() {
         unsafe { *new_class_data = std::ptr::null_mut() };
     }
+    let mut callback_completed = false;
     dispatch_event!("ClassFileLoadHook", env, jni, |agent, context| {
         agent.class_file_load_hook(
             context,
@@ -800,7 +802,22 @@ unsafe extern "system" fn trampoline_class_file_load_hook(
                 new_class_data,
             ),
         );
+        callback_completed = true;
     });
+    if !callback_completed && !new_class_data.is_null() {
+        let transformed = unsafe { *new_class_data };
+        if !transformed.is_null() && !env.is_null() {
+            // `set_transformed_class` transfers this allocation to the VM only
+            // after a successful callback. A contained panic rolls the pending
+            // output back and releases it through the originating environment.
+            let rollback_env = unsafe { env::Jvmti::from_raw(env) };
+            let _ = unsafe { rollback_env.deallocate_raw(transformed) };
+        }
+        unsafe { *new_class_data = std::ptr::null_mut() };
+        if !new_class_data_len.is_null() {
+            unsafe { *new_class_data_len = 0 };
+        }
+    }
 }
 
 unsafe extern "system" fn trampoline_compiled_method_load(

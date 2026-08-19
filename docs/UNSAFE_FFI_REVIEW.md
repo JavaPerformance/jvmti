@@ -3,10 +3,12 @@
 3.0.0 decision: pre-publication independent review waived by the release owner;
 mechanical gates passed, but waiver was not represented as acceptance
 
-3.0.2 status: two post-publication findings resolved; targeted independent
-confirmation of the exact fix commit is pending
+3.0.2 status: five post-publication findings resolved in the candidate;
+targeted independent confirmation is pending
 
-3.0.2 safety-fix commit: `3ccb3ff456c1ef4492ea1d1918863a88b62a3b35`
+3.0.2 safety-fix base commit: `3ccb3ff456c1ef4492ea1d1918863a88b62a3b35`
+
+3.0.2 immutable external review: pending
 
 3.0.2 decision: pending
 
@@ -72,9 +74,13 @@ scripts/check-unsafe-surface.py --write
 ```
 
 The reviewer records findings, residual assumptions, reviewed commit, platform
-scope, and an explicit accept/reject decision in this document or a linked
-review. The release author then resolves findings without rewriting the review
-history.
+scope, and an explicit accept/reject decision in an immutable external review.
+After acceptance, the release author regenerates the unsafe baseline and makes
+an evidence-only commit. The reviewer then confirms that delta and records the
+exact final commit in the same external review. A tracked file cannot contain
+the hash of its own commit, so the external record, signed tag, and hosted build
+evidence are the authoritative commit identity. Findings are resolved without
+rewriting review history.
 
 ## 3.0.2 Post-Publication Findings
 
@@ -89,12 +95,25 @@ the published 3.0.0/3.0.1 unsafe boundary:
    3.0.2 candidate uses checked non-zero progression, records range exhaustion
    in callback state, aborts traversal, and returns a typed JVM TI error. The
    adjacent edge collector now reserves storage fallibly before mutation.
+3. `Jvmti::dispose_environment` consumed one wrapper but remained safe even
+   though native disposal can invalidate callback-scoped wrappers still active
+   for that environment. The candidate makes disposal unsafe and documents the
+   callback-drain, resource-cleanup, and no-future-use preconditions.
+4. `ClassFileLoadHook` could leave a completed transformation output installed
+   after the handler subsequently panicked. The candidate treats that output as
+   transactional: the panic path deallocates the pending JVM TI buffer and
+   clears both output fields before returning to the VM.
+5. The untrusted class-file parser accepted a terminal `CONSTANT_Long` or
+   `CONSTANT_Double` without its required second constant-pool slot. Both tags
+   now fail with a typed invalid-index error before their payload is consumed.
 
 The focused regression matrix covers absent/default/redirecting/panicking
 native-bind handlers, zero crossing, range exhaustion without object mutation,
-and propagation of callback failure through a mocked JVM TI traversal. The
-complete release, ABI, live-JVM, sanitizer, and 3.x compatibility gates must be
-rerun on the final commit before publication.
+propagation of callback failure through a mocked JVM TI traversal, rollback of
+a panicking class transformation with exactly one deallocation, explicit unsafe
+environment disposal, and malformed terminal two-slot constants. The complete
+release, ABI, live-JVM, sanitizer, and 3.x compatibility gates must be rerun on
+the final commit before publication.
 
 The live boundary proofs are reproducible with:
 

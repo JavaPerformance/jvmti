@@ -1,0 +1,10 @@
+{
+  "approved_breaks": [
+    {
+      "lint": "inherent_method_unsafe_added",
+      "item": "Jvmti::dispose_environment",
+      "version": "3.0.2",
+      "reason": "Disposal can invalidate callback-scoped wrappers that remain live after the native call."
+    }
+  ]
+}

@@ -258,9 +258,21 @@ The exact source changes are:
 |---|---|---|
 | `allocate(jlong) -> Result<*mut u8, _>` | `allocate(usize) -> Result<JvmtiAllocation<'_>, _>` | Keep the guard or call unsafe `into_raw()` for an intentional transfer |
 | `deallocate(*mut u8)` | `unsafe deallocate_raw(*mut u8)` | Prefer automatic guard cleanup |
-| `dispose_environment(&self)` | `dispose_environment(self)` | End all borrows, then consume the environment |
+| `dispose_environment(&self)` | `unsafe dispose_environment(self)` | Disable and drain callbacks, clean up environment resources, then consume the environment in an audited unsafe block |
 | `get_jni_function_table() -> *mut JNIEnv` | `get_jni_function_table() -> JniFunctionTable<'_>` | Keep the owning guard; use `as_ptr()` only for audited raw integration |
 | `set_jni_function_table(*const JNIEnv)` | `unsafe set_jni_function_table(*const JNINativeInterface_)` | Pass the correctly indirect table and document process-wide validity |
+
+Environment disposal now requires an explicit shutdown proof:
+
+```rust,ignore
+// Disable event delivery, wait for active handlers to drain, release explicit
+// environment resources, and ensure no copied raw pointer can be used again.
+unsafe { jvmti.dispose_environment()? };
+```
+
+Consuming the wrapper prevents direct reuse of that Rust value, but cannot
+express the native guarantee that no already-running callback still holds the
+same environment pointer.
 
 `JniFunctionTable` is deliberately opaque. An older VM may allocate only its
 shorter JNI table prefix, so it cannot be safely borrowed as a complete JDK 28

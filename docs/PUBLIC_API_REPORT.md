@@ -124,7 +124,7 @@ Note: `sys` mirrors JNI/JVMTI headers and may grow with new JDK versions.
 
 ## `classfile` Module
 
-1. `ClassFile` and supporting structs/enums for all standard Java 8-27 attributes.
+1. `ClassFile` and supporting structs/enums for typed JVMS-standard attributes through Java 28, with opaque preservation of unknown and VM-specific attributes.
 2. `ClassFile::parse(bytes)` entry point.
 3. `JavaString` for exact Java Modified UTF-8 values, including unpaired UTF-16 surrogates.
 4. `ClassFileParseLimits` and `ClassFile::parse_with_limits` for explicit

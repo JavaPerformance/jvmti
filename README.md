@@ -61,7 +61,7 @@ If you only need JNI to call into Java from Rust applications, crates like `jni`
 
 1. Full JNI + JVMTI coverage (agent-first focus)
 2. Safe, owned return types in the high-level `env` wrappers
-3. Class file parsing with all standard Java 8-27 attributes and opaque preservation of unknown attributes
+3. Typed parsing of JVMS-standard attributes through Java 28, with opaque preservation of unknown and VM-specific attributes
 4. A tiny but explicit public surface (`env`, `sys`, `classfile`, `prelude`)
 5. Safety guidance, pitfalls, and compatibility documentation
 6. Examples that mirror real JVMTI tooling patterns
@@ -260,7 +260,10 @@ jcmd <pid> JVMTI.agent_load /abs/path/to/libattach_logger.so "opt1=val1"
 
 ## Class File Parsing
 
-This crate now includes a zero-dependency class file parser that understands all standard attributes from Java 8 through Java 27. Use it inside `ClassFileLoadHook` to inspect or transform class metadata.
+This crate includes a zero-dependency class file parser with typed decoding for
+JVMS-standard attributes through Java 28. Unknown and VM-specific attributes
+are preserved opaquely. Use it inside `ClassFileLoadHook` to inspect or
+transform class metadata.
 
 `ClassFile::parse` applies conservative input-size, cumulative allocation,
 annotation-nesting, and recursive-attribute limits for untrusted input. Use
@@ -504,7 +507,7 @@ Rust helps — but JVMTI is still a sharp tool.
 │   JNI leases - Array/string native storage RAII guards    │
 ├─────────────────────────────────────────────────────────┤
 │              Class File Parser (classfile)               │
-│   ClassFile  - All standard Java 8-27 attributes         │
+│   ClassFile  - Standard attrs through Java 28 + unknowns │
 ├─────────────────────────────────────────────────────────┤
 │              Convenience Imports (prelude)               │
 │   prelude::* - Agent, env, sys, helpers                  │
@@ -612,6 +615,11 @@ cargo build --release --example minecraft_class_activity
 # Minecraft F8 + mouse-wheel "bullet time" (mapping-agnostic public-API template)
 cargo build --release --example minecraft_bullet_time
 ```
+
+The bullet-time example inventories already-prepared classes at `VMInit` and
+fails fast on HotSpot dynamic attach because the required breakpoint and local-
+variable capabilities are not offered in the live phase. See the examples
+cookbook for mapping, slot, and diagnostic details.
 
 See [examples/README.md](examples/README.md) for all 36 examples.
 

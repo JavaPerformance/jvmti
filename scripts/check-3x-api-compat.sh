@@ -43,7 +43,17 @@ fi
 
 # The tools are complementary: semver-checks explains known violations, while
 # public-api catches changed signatures that semver-checks does not yet model.
-cargo semver-checks --baseline-rev "$baseline" --all-features
+semver_report="${report%.diff}.semver.txt"
+set +e
+cargo semver-checks --baseline-rev "$baseline" --all-features --color never \
+  >"$semver_report" 2>&1
+semver_status=$?
+set -e
+cat "$semver_report"
+if (( semver_status != 0 )); then
+  scripts/check-semver-soundness-exceptions.py \
+    "$semver_report" api/approved-3x-soundness-breaks.json
+fi
 
 mkdir -p "$(dirname "$report")"
 toolchain=${PUBLIC_API_TOOLCHAIN:-nightly-2026-08-17}

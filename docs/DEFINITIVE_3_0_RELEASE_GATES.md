@@ -207,7 +207,10 @@ After the 3.0.0 tag:
    snapshot. JDK 29 enters the compatibility matrix only after an identifiable
    official source revision passes the complete gate.
 6. Deprecate before removal wherever safety permits. A soundness fix may make a
-   narrow break, but must include an explicit migration and release note.
+   narrow break, but must include an explicit migration and release note and an
+   exact entry in `api/approved-3x-soundness-breaks.json`. The gate must reject
+   every additional lint or item rather than globally suppressing that class of
+   SemVer failure.
 7. Treat the Rust 1.85 MSRV and zero-dependency contract as public 3.x policy.
 
 The expected result is not "no more releases." It is a durable 3.x family in

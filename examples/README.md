@@ -67,9 +67,11 @@ jvmti-bindings = "3"
 | `field_watch` | Install read/write watchpoints on one field | Options: `class=...`, `field=...` |
 | `breakpoint` | Break at the first location of one method | Options: `class=...`, `method=...` |
 
-Watchpoints and breakpoints resolve their target during `ClassPrepare`, where
-name lookup is safe and bounded. A production attach-time agent must also
-handle a target class that was loaded before attachment.
+Watchpoints and breakpoints normally resolve their target during
+`ClassPrepare`, where name lookup is safe and bounded. An attach-time design
+must also inventory classes that were loaded earlier, but only when the live
+JVM still advertises every required capability; HotSpot keeps several debugging
+capabilities OnLoad-only.
 
 ## Memory, GC, And Failure Signals
 
@@ -123,7 +125,9 @@ Armed wheel input is consumed before normal hotbar handling. Its default
 Mojang-mapped names are illustrative. The configured callback signatures and
 local slots must match the exact game version and mapping set. It deliberately
 sleeps on the selected tick thread, making it a toy and diagnostic demonstration
-rather than a production agent.
+rather than a production agent. Options are parsed strictly: unknown,
+duplicate, malformed, or negative-slot values reject agent initialization
+instead of silently selecting defaults.
 
 Build it and load it when the client JVM starts:
 
@@ -131,6 +135,20 @@ Build it and load it when the client JVM starts:
 cargo build --release --example minecraft_bullet_time
 java -agentpath:/absolute/path/to/libminecraft_bullet_time.so [launcher options]
 ```
+
+The agent enables `VMInit` and inventories already-prepared classes there, then
+keeps `ClassPrepare` enabled for later Minecraft classes. It also implements an
+attach path for JVMs that advertise breakpoint and local-variable capabilities
+in the live phase. OpenJDK HotSpot 8 and 28 do not advertise either capability
+then, so dynamic attach fails fast with an instruction to use startup
+`-agentpath`; it does not pretend that a loaded-class scan can overcome the
+capability boundary.
+
+The example keeps its breakpoints for the lifetime of the process. JVM TI marks
+`ClearBreakpoint` as live-phase-only and not callback-safe, so `VMDeath` is not
+a valid place to retrofit teardown. A reusable agent would expose an earlier
+agent-owned shutdown command, disable events, clear each breakpoint on that
+control path, and only then relinquish capabilities.
 
 Use `libminecraft_bullet_time.dylib` on macOS and
 `minecraft_bullet_time.dll` on Windows. Supply comma-separated agent options
@@ -142,15 +160,23 @@ after `=` when the runtime uses different mappings or local-variable slots:
 
 At runtime, hold F8 while moving the wheel. Scrolling down increases the delay;
 scrolling up decreases it. An unarmed wheel event is not modified. If any
-configured method or local-variable slot does not match, the VM-death summary
-reports installation, read, and consumption counters for diagnosis.
+configured method or local-variable slot does not match, installation logs name
+the target and discovery path. The VM-death summary reports read and consumption
+totals split into invalid-slot, type-mismatch, opaque-frame, and other local
+access failures.
 
 On Linux or macOS, the repository's deterministic Java fixture exercises those
-semantics end to end:
+semantics, the already-loaded `VMInit` scan, and the HotSpot dynamic-attach
+capability boundary end to end:
 
 ```bash
 scripts/prove-minecraft-bullet-time-live.sh
 ```
+
+With no arguments, the proof uses a valid `JAVA_HOME` or derives the home of
+the active `java` runtime. Pass one or more JDK homes to exercise an explicit
+matrix; every explicitly requested home must contain both `bin/java` and
+`bin/javac` or the proof fails.
 
 ## Callback Performance Proofs
 

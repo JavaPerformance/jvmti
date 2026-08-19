@@ -2,7 +2,7 @@
 
 ## 3.0.2
 
-Safety patch following independent post-publication FFI review.
+Safety patch addressing independent post-publication FFI review findings.
 
 1. `NativeMethodBind` now preserves the VM-selected implementation address for
    absent and default no-op agents. If a handler changes the address and then
@@ -17,10 +17,27 @@ Safety patch following independent post-publication FFI review.
    configurable Java-side keyboard and mouse-scroll callbacks, requires F8 to
    be held, consumes the armed scroll delta before normal hotbar handling, and
    adjusts a bounded delay at a configurable tick-method breakpoint without
-   platform-specific input APIs.
+   platform-specific input APIs. The example now strictly validates options,
+   inventories already-prepared classes at `VMInit`, logs breakpoint decisions,
+   categorizes local-access failures, and rejects unsupported HotSpot dynamic
+   attach with an explicit OnLoad-capability diagnostic.
+4. `Jvmti::dispose_environment` is now explicitly unsafe. Consuming one Rust
+   wrapper cannot prove that the JVM has drained every callback context for the
+   same native environment, and JVM TI forbids using that environment after
+   disposal.
+5. `ClassFileLoadHook` transformation output is transactional across panic
+   containment. If a handler allocates transformed bytes and then panics, the
+   trampoline deallocates the pending JVM TI buffer and clears both output
+   fields instead of committing the transformation.
+6. The class-file parser rejects a terminal `CONSTANT_Long` or
+   `CONSTANT_Double` that lacks the required second constant-pool slot.
+7. Crate-level compatibility documentation now matches the canonical JDK 8-28
+   source and live-preview evidence ledger.
 
-There is no public library API or ABI change, no new dependency, and no change
-to the Rust 1.85 minimum.
+The native ABI, dependency contract, and Rust 1.85 minimum are unchanged.
+Making `dispose_environment` unsafe is a narrow, intentional source break to
+close a soundness hole; callers must audit shutdown ordering and add an unsafe
+block with the documented preconditions.
 
 ## 3.0.1
 

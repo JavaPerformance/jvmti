@@ -276,8 +276,10 @@ The wrapper's safety boundary needs a focused correction:
   not make the dereference sound.
 - `Jvmti::deallocate` is safe but accepts any `*mut u8`, allowing safe Rust to
   ask JVMTI to free memory it did not allocate.
-- `Jvmti::dispose_environment(&self)` invalidates the JVMTI environment but
-  leaves the same wrapper available for subsequent safe method calls.
+- `Jvmti::dispose_environment(&self)` invalidated the JVM TI environment but
+  left the same wrapper available for subsequent safe method calls. Consuming
+  the wrapper removed that direct reuse, and 3.0.2 additionally made disposal
+  unsafe because active callback contexts can outlive the native dispose call.
 - `get_jni_function_table` returns an allocated raw pointer without an ownership
   guard, while `set_jni_function_table` mutates a process-critical table from a
   safe method.

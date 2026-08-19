@@ -1151,7 +1151,19 @@ impl Jvmti {
         Ok(caps)
     }
 
-    pub fn dispose_environment(self) -> Result<(), jvmti::jvmtiError> {
+    /// Shut down this JVM TI connection and invalidate its environment.
+    ///
+    /// JVM TI permits callbacks that are already running to continue after the
+    /// environment is disposed. The type system cannot prove that no callback
+    /// context, copied raw pointer, or other environment-derived state remains.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that callbacks for this environment have been
+    /// disabled and drained, that no code can subsequently use this environment
+    /// or a pointer derived from it, and that resources requiring explicit JVM TI
+    /// cleanup have been handled according to the JVM TI specification.
+    pub unsafe fn dispose_environment(self) -> Result<(), jvmti::jvmtiError> {
         unsafe {
             let dispose_env_fn = jvmti_function!(self, DisposeEnvironment)?;
             let err = dispose_env_fn(self.env);

@@ -1,7 +1,8 @@
-//! Class file parser for Java 8 through 27.
+//! Class file parser for Java 8 through 28.
 //!
 //! This module provides a zero-dependency parser for `.class` files,
-//! including all standard attributes defined from Java 8 through Java 27.
+//! with typed decoding for JVMS-standard attributes through Java 28 and opaque
+//! preservation of unknown and VM-specific attributes.
 
 use std::borrow::Cow;
 use std::cell::Cell;
@@ -851,6 +852,9 @@ fn parse_constant_pool(r: &mut Reader<'_, '_>) -> Result<ConstantPool, ClassFile
                 CpInfo::Float(f32::from_bits(bits))
             }
             5 => {
+                if i + 1 >= count {
+                    return Err(ClassFileError::InvalidConstantPoolIndex((i + 1) as u16));
+                }
                 let high = r.read_u4()? as u64;
                 let low = r.read_u4()? as u64;
                 let value = ((high << 32) | low) as i64;
@@ -860,6 +864,9 @@ fn parse_constant_pool(r: &mut Reader<'_, '_>) -> Result<ConstantPool, ClassFile
                 continue;
             }
             6 => {
+                if i + 1 >= count {
+                    return Err(ClassFileError::InvalidConstantPoolIndex((i + 1) as u16));
+                }
                 let high = r.read_u4()? as u64;
                 let low = r.read_u4()? as u64;
                 let value = f64::from_bits((high << 32) | low);

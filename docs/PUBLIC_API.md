@@ -5,7 +5,7 @@ This crate exposes a deliberately small and stable surface area.
 Public modules:
 1. `env` - High-level wrappers (`Jvmti`, `JniEnv`, `JvmtiAllocation`, `LocalRef`, `GlobalRef`, `WeakGlobalRef`, `PrimitiveArrayElements`, `PrimitiveArrayCritical`, `StringCritical`, `LocalFrame`, `JavaMonitorGuard`, `RawMonitor`, `RawMonitorGuard`).
 2. `sys` - Raw FFI bindings for JNI and JVMTI.
-3. `classfile` - Resource-bounded class file parser with Java 8-27 attributes and exact `JavaString` values.
+3. `classfile` - Resource-bounded parser with typed JVMS-standard attributes through Java 28, opaque unknown attributes, and exact `JavaString` values.
 4. `prelude` - Recommended imports for agent authors.
 5. `embed` - Feature-gated JVM embedding helpers.
 6. `advanced` - Feature-gated helpers (disabled by default).

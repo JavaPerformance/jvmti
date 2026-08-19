@@ -85,6 +85,9 @@ jobs:
         run: scripts/check-packaged-agent-template.sh
       - name: Compile both packaged downstream consumer canaries
         run: scripts/check-downstream-canaries.sh
+      - name: Prove Minecraft bullet-time startup scan and attach boundary
+        if: matrix.toolchain == '1.85.0'
+        run: scripts/prove-minecraft-bullet-time-live.sh "$JAVA_HOME"
 
   public-api-contract:
     name: Reviewed 3.0 API baseline and 3.x SemVer
@@ -131,7 +134,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$GITHUB_WORKSPACE/target/tool-tmp"
-          for test in mutf8 jni_mutf8_validation ownership jni_ownership raw_monitor_ownership; do
+          for test in mutf8 jni_mutf8_validation ownership jni_ownership raw_monitor_ownership class_transform_panic; do
             TMPDIR="$GITHUB_WORKSPACE/target/tool-tmp" \
               CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target/miri-ci" \
               cargo +nightly-2026-08-17 miri test --locked --test "$test"

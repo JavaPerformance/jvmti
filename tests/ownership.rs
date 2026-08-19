@@ -171,7 +171,8 @@ fn allocation_is_environment_bound_and_deallocated_once() {
     assert_eq!(error, jvmti::jvmtiError::ILLEGAL_ARGUMENT);
     assert_eq!(ALLOCATIONS.load(Ordering::SeqCst), 2);
 
-    env.dispose_environment().unwrap();
+    // SAFETY: this mock environment has no callbacks or outstanding resources.
+    unsafe { env.dispose_environment() }.unwrap();
     assert_eq!(DISPOSALS.load(Ordering::SeqCst), 1);
 }
 
