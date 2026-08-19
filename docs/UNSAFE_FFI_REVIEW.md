@@ -3,14 +3,23 @@
 3.0.0 decision: pre-publication independent review waived by the release owner;
 mechanical gates passed, but waiver was not represented as acceptance
 
-3.0.2 status: five post-publication findings resolved in the candidate;
-targeted independent confirmation is pending
+3.0.2 status: exact code candidate accepted by independent review; the
+evidence-only follow-up is awaiting reviewer confirmation
 
 3.0.2 safety-fix base commit: `3ccb3ff456c1ef4492ea1d1918863a88b62a3b35`
 
-3.0.2 immutable external review: pending
+3.0.2 reviewed code-candidate commit:
+`769f05c229491ec2bdc1f8c7c98a04a6d368e806`
 
-3.0.2 decision: pending
+3.0.2 immutable external review:
+[`JavaPerformance/jvmti` PR #6 review record](https://github.com/JavaPerformance/jvmti/pull/6#issuecomment-5339531055)
+
+3.0.2 reviewer: Grok, independent of the release author
+
+3.0.2 reviewed platform scope: Linux x86-64; OpenJDK 21.0.12; Rust 1.85.0
+
+3.0.2 decision: **ACCEPT** the code candidate; confirm the evidence-only delta
+before release
 
 This is the handoff packet for an independent reviewer. Automated gates catch
 known structural failures; they do not prove that every safety precondition is
@@ -121,3 +130,35 @@ The live boundary proofs are reproducible with:
 scripts/prove-native-method-bind-live.sh /path/to/jdk8 /path/to/jdk21
 scripts/prove-heap-graph-live.sh /path/to/jdk8 /path/to/jdk21
 ```
+
+## 3.0.2 Independent Acceptance
+
+The independent reviewer accepted exact commit
+`769f05c229491ec2bdc1f8c7c98a04a6d368e806` after confirming that all five
+post-publication findings above were closed. On Linux x86-64 with OpenJDK
+21.0.12, the reviewer reported successful results for:
+
+- `cargo +1.85.0 test --locked --all-features`;
+- `cargo fmt --all -- --check`;
+- the live `NativeMethodBind` preservation proof;
+- the live heap-graph proof;
+- the live Modified UTF-8 proof; and
+- the live event-callback matrix.
+
+The unsafe-surface baseline was deliberately excluded from the accepted code
+candidate so that acceptance preceded regeneration. The release author may now
+regenerate that baseline, commit only this review packet and the baseline, and
+run the complete release and cross-JDK ABI gates. The reviewer must confirm the
+resulting evidence-only delta before release.
+
+The acceptance retains these residual assumptions and limitations:
+
+1. JVM callback pointer-and-length pairs are trusted for the callback
+   invocation.
+2. `catch_unwind` cannot contain `panic = "abort"` or foreign exceptions.
+3. Failure while deallocating a rolled-back class transformation may leak the
+   buffer, but does not publish it to the VM or create a second release path.
+4. A synchronously aborted heap walk may leave tags written before the abort.
+5. `GLOBAL_AGENT` remains process-lifetime and is not dropped on unload.
+6. Hosted Linux AArch64, macOS, Windows, sanitizer, and full supported-header
+   ABI evidence remains a gate on the final evidence commit.

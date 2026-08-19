@@ -11,6 +11,12 @@ src/advanced/heap_graph.rs	pub unsafe fn build_heap_graph(
 src/advanced/heap_graph.rs	unsafe {
 src/advanced/heap_graph.rs	let result = unsafe {
 src/advanced/heap_graph.rs	unsafe { tag_all_objects_cb(0, 0, &mut tag, (&mut tagger as *mut Tagger).cast()) };
+src/advanced/heap_graph.rs	unsafe { tag_all_objects_cb(0, 0, &mut first, (&mut tagger as *mut Tagger).cast()) };
+src/advanced/heap_graph.rs	unsafe { tag_all_objects_cb(0, 0, &mut second, (&mut tagger as *mut Tagger).cast()) };
+src/advanced/heap_graph.rs	unsafe { tag_all_objects_cb(0, 0, &mut tag, (&mut tagger as *mut Tagger).cast()) };
+src/advanced/heap_graph.rs	unsafe extern "system" fn iterate_one_untagged_object(
+src/advanced/heap_graph.rs	let result = unsafe { callback(0, 0, &mut tag, user_data.cast_mut()) };
+src/advanced/heap_graph.rs	let env = unsafe { Jvmti::from_raw(&mut raw_env) };
 src/agent.rs	pub(crate) unsafe fn from_raw(raw: *mut jni::JavaVM) -> Option<Self> {
 src/agent.rs	pub(crate) unsafe fn from_raw(
 src/agent.rs	vm: unsafe { JavaVmRef::from_raw(vm)? },
@@ -410,6 +416,7 @@ src/jvmti_wrapper.rs	unsafe {
 src/jvmti_wrapper.rs	pub unsafe fn get_method_name(
 src/jvmti_wrapper.rs	unsafe {
 src/jvmti_wrapper.rs	unsafe {
+src/jvmti_wrapper.rs	pub unsafe fn dispose_environment(self) -> Result<(), jvmti::jvmtiError> {
 src/jvmti_wrapper.rs	unsafe {
 src/jvmti_wrapper.rs	unsafe {
 src/jvmti_wrapper.rs	pub unsafe fn redefine_classes(
@@ -668,7 +675,8 @@ src/lib.rs	if let Some($context) = unsafe {
 src/lib.rs	unsafe extern "system" fn trampoline_method_entry(
 src/lib.rs	unsafe extern "system" fn trampoline_method_exit(
 src/lib.rs	unsafe extern "system" fn trampoline_native_method_bind(
-src/lib.rs	unsafe { *new_address_ptr = std::ptr::null_mut() };
+src/lib.rs	Some(unsafe { *new_address_ptr })
+src/lib.rs	unsafe { *new_address_ptr = original_address };
 src/lib.rs	unsafe extern "system" fn trampoline_vm_init(
 src/lib.rs	unsafe extern "system" fn trampoline_vm_death(env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv) {
 src/lib.rs	unsafe extern "system" fn trampoline_vm_start(env: *mut jvmti::jvmtiEnv, jni: *mut jni::JNIEnv) {
@@ -681,6 +689,11 @@ src/lib.rs	unsafe extern "system" fn trampoline_class_prepare(
 src/lib.rs	unsafe extern "system" fn trampoline_class_file_load_hook(
 src/lib.rs	unsafe { *new_class_data_len = 0 };
 src/lib.rs	unsafe { *new_class_data = std::ptr::null_mut() };
+src/lib.rs	let transformed = unsafe { *new_class_data };
+src/lib.rs	let rollback_env = unsafe { env::Jvmti::from_raw(env) };
+src/lib.rs	let _ = unsafe { rollback_env.deallocate_raw(transformed) };
+src/lib.rs	unsafe { *new_class_data = std::ptr::null_mut() };
+src/lib.rs	unsafe { *new_class_data_len = 0 };
 src/lib.rs	unsafe extern "system" fn trampoline_compiled_method_load(
 src/lib.rs	unsafe extern "system" fn trampoline_compiled_method_unload(
 src/lib.rs	unsafe extern "system" fn trampoline_dynamic_code_generated(
