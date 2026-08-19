@@ -35,7 +35,9 @@ impl Agent for MethodProfiler {
             return jni::JNI_ERR;
         }
 
-        if let Err(e) = jvmti.enable_events_global(&[jvmti::JVMTI_EVENT_METHOD_ENTRY]) {
+        if let Err(e) = jvmti
+            .enable_events_global(&[jvmti::JVMTI_EVENT_METHOD_ENTRY, jvmti::JVMTI_EVENT_VM_DEATH])
+        {
             eprintln!("[profiler] Failed to enable events: {:?}", e);
             return jni::JNI_ERR;
         }

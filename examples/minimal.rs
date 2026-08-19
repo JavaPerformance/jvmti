@@ -1,6 +1,6 @@
 //! Minimal JVMTI agent example.
 //!
-//! This is the simplest possible agent - it just prints messages on load/unload.
+//! Smallest agent: log load, VM init, VM death, and unload.
 //!
 //! # Building
 //!
@@ -25,6 +25,14 @@ impl Agent for MinimalAgent {
             "[MinimalAgent] Loaded with options: '{}'",
             context.options_lossy().as_deref().unwrap_or("")
         );
+        let Ok(jvmti) = context.vm().jvmti() else {
+            return jni::JNI_ERR;
+        };
+        if jvmti.set_default_agent_callbacks().is_err()
+            || jvmti.enable_vm_lifecycle_events().is_err()
+        {
+            return jni::JNI_ERR;
+        }
         jni::JNI_OK
     }
 

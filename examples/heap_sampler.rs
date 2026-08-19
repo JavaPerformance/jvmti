@@ -39,6 +39,10 @@ impl Agent for HeapSampler {
             eprintln!("[heap] Failed to enable events: {:?}", e);
             return jni::JNI_ERR;
         }
+        if let Err(e) = jvmti.enable_events_global(&[jvmti::JVMTI_EVENT_VM_DEATH]) {
+            eprintln!("[heap] Failed to enable VM death: {:?}", e);
+            return jni::JNI_ERR;
+        }
 
         jni::JNI_OK
     }
