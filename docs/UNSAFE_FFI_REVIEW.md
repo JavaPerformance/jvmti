@@ -3,10 +3,10 @@
 3.0.0 decision: pre-publication independent review waived by the release owner;
 mechanical gates passed, but waiver was not represented as acceptance
 
-3.0.2 status: exact code candidate accepted by independent review. The
-immutable PR record is authoritative for the final evidence-delta and release
-commit confirmation; this tracked packet deliberately does not mirror mutable
-review status.
+3.0.2 status: exact code candidate accepted by independent review. The release
+owner waived separate independent confirmation of the final evidence and
+documentation delta on 2026-08-19 after the complete local and hosted release
+gates passed.
 
 3.0.2 safety-fix base commit: `3ccb3ff456c1ef4492ea1d1918863a88b62a3b35`
 
@@ -23,8 +23,8 @@ review status.
 
 3.0.2 reviewed platform scope: Linux x86-64; OpenJDK 21.0.12; Rust 1.85.0
 
-3.0.2 decision: **ACCEPT** the code candidate. Release remains gated on the
-external record confirming the final evidence delta and exact release commit.
+3.0.2 decision: **ACCEPT** the code candidate. Separate confirmation of the
+final evidence and documentation delta was waived by the release owner.
 
 This is the handoff packet for an independent reviewer. Automated gates catch
 known structural failures; they do not prove that every safety precondition is
@@ -154,7 +154,8 @@ The unsafe-surface baseline was deliberately excluded from the accepted code
 candidate so that acceptance preceded regeneration. The release author then
 regenerated the baseline in an evidence-only follow-up and reran the complete
 release and cross-JDK ABI gates. The immutable PR record identifies the exact
-confirmed release revision without creating a self-referential tracked file.
+release revision and records the release owner's waiver of a separate final
+delta confirmation without creating a self-referential tracked file.
 
 The acceptance retains these residual assumptions and limitations:
 
