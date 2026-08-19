@@ -109,11 +109,48 @@ contain or derive from any private instrumentor or RASP implementation.
 |---|---|---|
 | `minecraft_class_activity` | Count class files and bytes under a package prefix | `prefix=net/minecraft/` |
 | `minecraft_tick_breakpoint` | Count calls to a chosen server tick method | `class=L...;,method=...` |
+| `minecraft_bullet_time` | Hold F8 and scroll down to slow a chosen client tick or up to restore speed | `tick_class=...`, `scroll_class=...`, `keyboard_class=...`, `activation_key=297`, `step_ms=10`, `max_delay_ms=250` |
 
 Minecraft class and method names vary by release, loader, and mapping set. Pass
 the names for the exact runtime being observed. Breakpoints are useful for a
 small diagnostic probe; production profiling usually needs sampling or narrow
 instrumentation to avoid event overhead.
+
+`minecraft_bullet_time` observes Java-side keyboard and scroll callbacks
+supplied by the game/LWJGL and is therefore independent of the host window
+system. By default, only F8 (`GLFW_KEY_F8`, value `297`) arms the mouse wheel.
+Armed wheel input is consumed before normal hotbar handling. Its default
+Mojang-mapped names are illustrative. The configured callback signatures and
+local slots must match the exact game version and mapping set. It deliberately
+sleeps on the selected tick thread, making it a toy and diagnostic demonstration
+rather than a production agent.
+
+Build it and load it when the client JVM starts:
+
+```bash
+cargo build --release --example minecraft_bullet_time
+java -agentpath:/absolute/path/to/libminecraft_bullet_time.so [launcher options]
+```
+
+Use `libminecraft_bullet_time.dylib` on macOS and
+`minecraft_bullet_time.dll` on Windows. Supply comma-separated agent options
+after `=` when the runtime uses different mappings or local-variable slots:
+
+```text
+-agentpath:/path/to/agent=keyboard_method=keyPress,activation_key=297,step_ms=5,max_delay_ms=200
+```
+
+At runtime, hold F8 while moving the wheel. Scrolling down increases the delay;
+scrolling up decreases it. An unarmed wheel event is not modified. If any
+configured method or local-variable slot does not match, the VM-death summary
+reports installation, read, and consumption counters for diagnosis.
+
+On Linux or macOS, the repository's deterministic Java fixture exercises those
+semantics end to end:
+
+```bash
+scripts/prove-minecraft-bullet-time-live.sh
+```
 
 ## Callback Performance Proofs
 

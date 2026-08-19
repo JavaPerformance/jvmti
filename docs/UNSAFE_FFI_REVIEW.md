@@ -6,7 +6,7 @@ mechanical gates passed, but waiver was not represented as acceptance
 3.0.2 status: two post-publication findings resolved; targeted independent
 confirmation of the exact fix commit is pending
 
-3.0.2 candidate commit: to be recorded after the fix commit exists
+3.0.2 safety-fix commit: `3ccb3ff456c1ef4492ea1d1918863a88b62a3b35`
 
 3.0.2 decision: pending
 

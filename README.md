@@ -393,7 +393,7 @@ round trip.
 
 ## Examples
 
-The repository includes 35 compilable examples covering agent lifecycle,
+The repository includes 36 compilable examples covering agent lifecycle,
 threads and virtual threads, exceptions, monitors, GC and allocation events,
 JIT/native events, field watchpoints, breakpoints, JNI local-reference
 management, class-file parsing, embedding, performance proofs, and standalone
@@ -608,9 +608,12 @@ cargo build --release --example class_logger
 
 # Minecraft class-load activity (standalone public-API template)
 cargo build --release --example minecraft_class_activity
+
+# Minecraft F8 + mouse-wheel "bullet time" (mapping-agnostic public-API template)
+cargo build --release --example minecraft_bullet_time
 ```
 
-See [examples/README.md](examples/README.md) for all 35 examples.
+See [examples/README.md](examples/README.md) for all 36 examples.
 
 ## Documentation
 

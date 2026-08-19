@@ -1,5 +1,27 @@
 # Changelog
 
+## 3.0.2
+
+Safety patch following independent post-publication FFI review.
+
+1. `NativeMethodBind` now preserves the VM-selected implementation address for
+   absent and default no-op agents. If a handler changes the address and then
+   panics, the trampoline restores the original address before returning to the
+   VM. Regression tests cover absent, no-op, redirecting, and panicking paths.
+2. Heap tagging now uses checked non-zero tag progression. Exhausted ranges
+   abort traversal and return `JVMTI_ERROR_ILLEGAL_ARGUMENT` rather than
+   panicking or wrapping inside an FFI callback. Heap-edge storage also uses
+   fallible reservation and returns `JVMTI_ERROR_OUT_OF_MEMORY` on capacity
+   failure.
+3. Adds the cross-platform `minecraft_bullet_time` example. It observes
+   configurable Java-side keyboard and mouse-scroll callbacks, requires F8 to
+   be held, consumes the armed scroll delta before normal hotbar handling, and
+   adjusts a bounded delay at a configurable tick-method breakpoint without
+   platform-specific input APIs.
+
+There is no public library API or ABI change, no new dependency, and no change
+to the Rust 1.85 minimum.
+
 ## 3.0.1
 
 Documentation and examples update. The example suite grows from 13 to 35
