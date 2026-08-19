@@ -8,7 +8,9 @@ use jvmti_bindings::{Agent, get_default_callbacks, jni, set_global_agent};
 
 static SEEN: AtomicU64 = AtomicU64::new(0);
 static PANIC_NEXT_METHOD_ENTRY: AtomicBool = AtomicBool::new(false);
+static PANIC_NEXT_NATIVE_BIND: AtomicBool = AtomicBool::new(false);
 static CONTAINED_PANICS: AtomicUsize = AtomicUsize::new(0);
+static CONTAINED_NATIVE_BIND_PANICS: AtomicUsize = AtomicUsize::new(0);
 
 const THREAD: usize = 0x1010;
 const CLASS: usize = 0x2020;
@@ -44,8 +46,15 @@ impl Agent for SentinelAgent {
     }
 
     fn callback_panicked(&self, event: &'static str) {
-        assert_eq!(event, "MethodEntry");
-        CONTAINED_PANICS.fetch_add(1, Ordering::Relaxed);
+        match event {
+            "MethodEntry" => {
+                CONTAINED_PANICS.fetch_add(1, Ordering::Relaxed);
+            }
+            "NativeMethodBind" => {
+                CONTAINED_NATIVE_BIND_PANICS.fetch_add(1, Ordering::Relaxed);
+            }
+            _ => panic!("unexpected contained callback panic: {event}"),
+        }
     }
 
     fn vm_init(&self, context: CallbackContext<'_>, event: ThreadEvent) {
@@ -179,6 +188,10 @@ impl Agent for SentinelAgent {
         assert_eq!(event.thread() as usize, THREAD);
         assert_eq!(event.method() as usize, METHOD);
         assert_eq!(event.address() as usize, ADDRESS);
+        if PANIC_NEXT_NATIVE_BIND.swap(false, Ordering::Relaxed) {
+            unsafe { event.set_new_address(mut_ptr(ADDRESS + 2)) };
+            panic!("native method bind panic sentinel");
+        }
         unsafe { event.set_new_address(mut_ptr(ADDRESS + 1)) };
     }
 
@@ -433,4 +446,19 @@ fn every_callback_forwards_exact_context_and_payload() {
     PANIC_NEXT_METHOD_ENTRY.store(true, Ordering::Relaxed);
     unsafe { callbacks.MethodEntry.unwrap()(env, jni_env, thread, method) };
     assert_eq!(CONTAINED_PANICS.load(Ordering::Relaxed), 1);
+
+    let mut preserved_native_address = mut_ptr(ADDRESS);
+    PANIC_NEXT_NATIVE_BIND.store(true, Ordering::Relaxed);
+    unsafe {
+        callbacks.NativeMethodBind.unwrap()(
+            env,
+            jni_env,
+            thread,
+            method,
+            mut_ptr(ADDRESS),
+            &mut preserved_native_address,
+        )
+    };
+    assert_eq!(preserved_native_address as usize, ADDRESS);
+    assert_eq!(CONTAINED_NATIVE_BIND_PANICS.load(Ordering::Relaxed), 1);
 }

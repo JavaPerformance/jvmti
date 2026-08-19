@@ -1,12 +1,14 @@
 # Independent Unsafe And FFI Review
 
-Status: required before publishing 3.0.0
+3.0.0 decision: pre-publication independent review waived by the release owner;
+mechanical gates passed, but waiver was not represented as acceptance
 
-Candidate commit: to be recorded after the release-candidate commit exists
+3.0.2 status: two post-publication findings resolved; targeted independent
+confirmation of the exact fix commit is pending
 
-Independent reviewer: unassigned
+3.0.2 candidate commit: to be recorded after the fix commit exists
 
-Decision: pending
+3.0.2 decision: pending
 
 This is the handoff packet for an independent reviewer. Automated gates catch
 known structural failures; they do not prove that every safety precondition is
@@ -73,3 +75,30 @@ The reviewer records findings, residual assumptions, reviewed commit, platform
 scope, and an explicit accept/reject decision in this document or a linked
 review. The release author then resolves findings without rewriting the review
 history.
+
+## 3.0.2 Post-Publication Findings
+
+Independent review on public issue `#3` identified two correctness defects in
+the published 3.0.0/3.0.1 unsafe boundary:
+
+1. The `NativeMethodBind` trampoline replaced the VM-provided mutable output
+   with null before dispatch. The 3.0.2 candidate instead leaves the output
+   unchanged for absent and no-op handlers, preserves deliberate replacement,
+   and restores the original value after a contained handler panic.
+2. The safe heap-tagging helper could overflow in its native callback. The
+   3.0.2 candidate uses checked non-zero progression, records range exhaustion
+   in callback state, aborts traversal, and returns a typed JVM TI error. The
+   adjacent edge collector now reserves storage fallibly before mutation.
+
+The focused regression matrix covers absent/default/redirecting/panicking
+native-bind handlers, zero crossing, range exhaustion without object mutation,
+and propagation of callback failure through a mocked JVM TI traversal. The
+complete release, ABI, live-JVM, sanitizer, and 3.x compatibility gates must be
+rerun on the final commit before publication.
+
+The live boundary proofs are reproducible with:
+
+```bash
+scripts/prove-native-method-bind-live.sh /path/to/jdk8 /path/to/jdk21
+scripts/prove-heap-graph-live.sh /path/to/jdk8 /path/to/jdk21
+```

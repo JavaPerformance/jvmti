@@ -660,15 +660,28 @@ unsafe extern "system" fn trampoline_native_method_bind(
     address: *mut std::ffi::c_void,
     new_address_ptr: *mut *mut std::ffi::c_void,
 ) {
-    if !new_address_ptr.is_null() {
-        unsafe { *new_address_ptr = std::ptr::null_mut() };
-    }
+    // `new_address_ptr` is an in/out value initialized by the VM. Leaving it
+    // unchanged preserves the selected native implementation. If user code
+    // mutates it and then panics, restore that VM-provided value before the
+    // contained panic returns control to the VM.
+    let original_address = if new_address_ptr.is_null() {
+        None
+    } else {
+        Some(unsafe { *new_address_ptr })
+    };
+    let mut callback_completed = false;
     dispatch_event!("NativeMethodBind", env, jni, |agent, context| {
         agent.native_method_bind(
             context,
             callbacks::NativeMethodBindEvent::new(thread, method, address, new_address_ptr),
         );
+        callback_completed = true;
     });
+    if !callback_completed {
+        if let Some(original_address) = original_address {
+            unsafe { *new_address_ptr = original_address };
+        }
+    }
 }
 
 unsafe extern "system" fn trampoline_vm_init(

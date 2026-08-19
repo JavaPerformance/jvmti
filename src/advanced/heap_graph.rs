@@ -26,6 +26,31 @@ pub struct TagRange {
 struct Tagger {
     next: jni::jlong,
     tagged: jni::jlong,
+    failure: Option<HeapCallbackFailure>,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+enum HeapCallbackFailure {
+    TagRangeExhausted,
+    EdgeCapacityExhausted,
+}
+
+impl HeapCallbackFailure {
+    const fn as_jvmti_error(self) -> jvmti::jvmtiError {
+        match self {
+            Self::TagRangeExhausted => jvmti::JVMTI_ERROR_ILLEGAL_ARGUMENT,
+            Self::EdgeCapacityExhausted => jvmti::JVMTI_ERROR_OUT_OF_MEMORY,
+        }
+    }
+}
+
+fn next_nonzero_tag(tag: jni::jlong) -> Option<jni::jlong> {
+    let next = tag.checked_add(1)?;
+    if next == 0 {
+        next.checked_add(1)
+    } else {
+        Some(next)
+    }
 }
 
 unsafe extern "system" fn tag_all_objects_cb(
@@ -43,23 +68,41 @@ unsafe extern "system" fn tag_all_objects_cb(
     // SAFETY: The null check above and JVM TI callback contract make `tag_ptr`
     // readable and writable for this invocation.
     if unsafe { *tag_ptr } == 0 {
+        let Some(next) = next_nonzero_tag(tagger.next) else {
+            tagger.failure = Some(HeapCallbackFailure::TagRangeExhausted);
+            return jvmti::JVMTI_ITERATION_ABORT;
+        };
+        let Some(tagged) = tagger.tagged.checked_add(1) else {
+            tagger.failure = Some(HeapCallbackFailure::TagRangeExhausted);
+            return jvmti::JVMTI_ITERATION_ABORT;
+        };
         unsafe { *tag_ptr = tagger.next };
-        tagger.next += 1;
-        tagger.tagged += 1;
+        tagger.next = next;
+        tagger.tagged = tagged;
     }
     jvmti::JVMTI_ITERATION_CONTINUE
 }
 
 /// Tags all objects in the heap with a unique tag (if currently 0).
 ///
+/// `start_tag` must be non-zero. Tag assignment increases monotonically and
+/// skips zero when a negative range crosses into positive values. If the range
+/// or tagged-object count cannot advance without overflow, traversal aborts and
+/// returns [`jvmti::JVMTI_ERROR_ILLEGAL_ARGUMENT`]. Objects tagged before that
+/// abort remain tagged, as required by the synchronous JVM TI traversal model.
+///
 /// This is expensive and should be used for offline analysis, not in hot paths.
 pub fn tag_all_objects(
     jvmti_env: &Jvmti,
     start_tag: jni::jlong,
 ) -> Result<TagRange, jvmti::jvmtiError> {
+    if start_tag == 0 {
+        return Err(jvmti::JVMTI_ERROR_ILLEGAL_ARGUMENT);
+    }
     let mut tagger = Tagger {
         next: start_tag,
         tagged: 0,
+        failure: None,
     };
     let user_data = &mut tagger as *mut Tagger as *mut c_void;
     // The callback and user-data pointer remain valid for this synchronous call.
@@ -71,6 +114,9 @@ pub fn tag_all_objects(
             user_data,
         )?
     };
+    if let Some(failure) = tagger.failure {
+        return Err(failure.as_jvmti_error());
+    }
     Ok(TagRange {
         start: start_tag,
         end: tagger.next,
@@ -80,6 +126,7 @@ pub fn tag_all_objects(
 
 struct EdgeCollector {
     edges: Vec<(jni::jlong, jni::jlong)>,
+    failure: Option<HeapCallbackFailure>,
 }
 
 unsafe extern "system" fn edge_collector_cb(
@@ -100,6 +147,10 @@ unsafe extern "system" fn edge_collector_cb(
     let referrer_tag = unsafe { *referrer_tag_ptr };
     if referrer_tag != 0 && target_tag != 0 {
         let collector = unsafe { &mut *(user_data as *mut EdgeCollector) };
+        if collector.edges.try_reserve(1).is_err() {
+            collector.failure = Some(HeapCallbackFailure::EdgeCapacityExhausted);
+            return jvmti::JVMTI_VISIT_ABORT;
+        }
         collector.edges.push((referrer_tag, target_tag));
     }
     jvmti::JVMTI_VISIT_OBJECTS
@@ -118,7 +169,10 @@ pub unsafe fn build_heap_graph(
     heap_filter: jni::jint,
     initial_object: jni::jobject,
 ) -> Result<HeapGraph, jvmti::jvmtiError> {
-    let mut collector = EdgeCollector { edges: Vec::new() };
+    let mut collector = EdgeCollector {
+        edges: Vec::new(),
+        failure: None,
+    };
     let callbacks = jvmti::jvmtiHeapCallbacks {
         heap_reference_callback: Some(edge_collector_cb),
         ..Default::default()
@@ -135,6 +189,9 @@ pub unsafe fn build_heap_graph(
             &mut collector as *mut EdgeCollector as *const c_void,
         )?;
     }
+    if let Some(failure) = collector.failure {
+        return Err(failure.as_jvmti_error());
+    }
 
     Ok(HeapGraph {
         edges: collector.edges,
@@ -147,7 +204,10 @@ mod tests {
 
     #[test]
     fn modern_reference_callback_requests_continued_object_visitation() {
-        let mut collector = EdgeCollector { edges: Vec::new() };
+        let mut collector = EdgeCollector {
+            edges: Vec::new(),
+            failure: None,
+        };
         let mut target = 22;
         let mut referrer = 11;
         let result = unsafe {
@@ -170,11 +230,79 @@ mod tests {
     #[test]
     fn deprecated_iterator_keeps_its_distinct_continue_contract() {
         let mut tag = 0;
-        let mut tagger = Tagger { next: 7, tagged: 0 };
+        let mut tagger = Tagger {
+            next: 7,
+            tagged: 0,
+            failure: None,
+        };
         let result =
             unsafe { tag_all_objects_cb(0, 0, &mut tag, (&mut tagger as *mut Tagger).cast()) };
         assert_eq!(result, jvmti::JVMTI_ITERATION_CONTINUE);
         assert_eq!(tag, 7);
         assert_eq!(tagger.tagged, 1);
+    }
+
+    #[test]
+    fn tag_progression_skips_zero() {
+        let mut tagger = Tagger {
+            next: -1,
+            tagged: 0,
+            failure: None,
+        };
+        let mut first = 0;
+        let mut second = 0;
+        let first_result =
+            unsafe { tag_all_objects_cb(0, 0, &mut first, (&mut tagger as *mut Tagger).cast()) };
+        let second_result =
+            unsafe { tag_all_objects_cb(0, 0, &mut second, (&mut tagger as *mut Tagger).cast()) };
+        assert_eq!(first_result, jvmti::JVMTI_ITERATION_CONTINUE);
+        assert_eq!(second_result, jvmti::JVMTI_ITERATION_CONTINUE);
+        assert_eq!((first, second), (-1, 1));
+        assert_eq!(tagger.next, 2);
+        assert_eq!(tagger.tagged, 2);
+        assert_eq!(tagger.failure, None);
+    }
+
+    #[test]
+    fn exhausted_tag_range_aborts_without_mutating_the_object() {
+        let mut tagger = Tagger {
+            next: jni::jlong::MAX,
+            tagged: 0,
+            failure: None,
+        };
+        let mut tag = 0;
+        let result =
+            unsafe { tag_all_objects_cb(0, 0, &mut tag, (&mut tagger as *mut Tagger).cast()) };
+        assert_eq!(result, jvmti::JVMTI_ITERATION_ABORT);
+        assert_eq!(tag, 0);
+        assert_eq!(tagger.tagged, 0);
+        assert_eq!(tagger.failure, Some(HeapCallbackFailure::TagRangeExhausted));
+    }
+
+    unsafe extern "system" fn iterate_one_untagged_object(
+        _env: *mut jvmti::jvmtiEnv,
+        _filter: jvmti::jvmtiHeapObjectFilter,
+        callback: Option<jvmti::jvmtiHeapObjectCallback>,
+        user_data: *const c_void,
+    ) -> jvmti::jvmtiError {
+        let mut tag = 0;
+        let callback = callback.expect("heap callback should be installed");
+        let result = unsafe { callback(0, 0, &mut tag, user_data.cast_mut()) };
+        assert_eq!(result, jvmti::JVMTI_ITERATION_ABORT);
+        jvmti::JVMTI_ERROR_NONE
+    }
+
+    #[test]
+    fn public_helper_propagates_callback_range_exhaustion() {
+        let table = jvmti::jvmtiInterface_1_ {
+            IterateOverHeap: Some(iterate_one_untagged_object),
+            ..Default::default()
+        };
+        let mut raw_env = jvmti::jvmtiEnv { functions: &table };
+        let env = unsafe { Jvmti::from_raw(&mut raw_env) };
+        assert_eq!(
+            tag_all_objects(&env, jni::jlong::MAX).unwrap_err(),
+            jvmti::JVMTI_ERROR_ILLEGAL_ARGUMENT
+        );
     }
 }
