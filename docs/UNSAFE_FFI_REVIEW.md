@@ -3,8 +3,10 @@
 3.0.0 decision: pre-publication independent review waived by the release owner;
 mechanical gates passed, but waiver was not represented as acceptance
 
-3.0.2 status: exact code candidate accepted by independent review; the
-evidence-only follow-up is awaiting reviewer confirmation
+3.0.2 status: exact code candidate accepted by independent review. The
+immutable PR record is authoritative for the final evidence-delta and release
+commit confirmation; this tracked packet deliberately does not mirror mutable
+review status.
 
 3.0.2 safety-fix base commit: `3ccb3ff456c1ef4492ea1d1918863a88b62a3b35`
 
@@ -12,14 +14,17 @@ evidence-only follow-up is awaiting reviewer confirmation
 `769f05c229491ec2bdc1f8c7c98a04a6d368e806`
 
 3.0.2 immutable external review:
-[`JavaPerformance/jvmti` PR #6 review record](https://github.com/JavaPerformance/jvmti/pull/6#issuecomment-5339531055)
+[`JavaPerformance/jvmti` PR #6 review record](https://github.com/JavaPerformance/jvmti/pull/6)
+
+3.0.2 code-candidate acceptance:
+[`769f05c` acceptance record](https://github.com/JavaPerformance/jvmti/pull/6#issuecomment-5339531055)
 
 3.0.2 reviewer: Grok, independent of the release author
 
 3.0.2 reviewed platform scope: Linux x86-64; OpenJDK 21.0.12; Rust 1.85.0
 
-3.0.2 decision: **ACCEPT** the code candidate; confirm the evidence-only delta
-before release
+3.0.2 decision: **ACCEPT** the code candidate. Release remains gated on the
+external record confirming the final evidence delta and exact release commit.
 
 This is the handoff packet for an independent reviewer. Automated gates catch
 known structural failures; they do not prove that every safety precondition is
@@ -146,10 +151,10 @@ post-publication findings above were closed. On Linux x86-64 with OpenJDK
 - the live event-callback matrix.
 
 The unsafe-surface baseline was deliberately excluded from the accepted code
-candidate so that acceptance preceded regeneration. The release author may now
-regenerate that baseline, commit only this review packet and the baseline, and
-run the complete release and cross-JDK ABI gates. The reviewer must confirm the
-resulting evidence-only delta before release.
+candidate so that acceptance preceded regeneration. The release author then
+regenerated the baseline in an evidence-only follow-up and reran the complete
+release and cross-JDK ABI gates. The immutable PR record identifies the exact
+confirmed release revision without creating a self-referential tracked file.
 
 The acceptance retains these residual assumptions and limitations:
 

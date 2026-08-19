@@ -660,7 +660,6 @@ src/jvmti_wrapper.rs	unsafe {
 src/jvmti_wrapper.rs	unsafe {
 src/jvmti_wrapper.rs	pub unsafe fn clear_all_frame_pops(
 src/jvmti_wrapper.rs	unsafe {
-src/lib.rs	//! if unsafe { jvmti_env.set_event_notification_mode(
 src/lib.rs	//! let Some(out_field) = (unsafe {
 src/lib.rs	//! let out = unsafe { jni.get_static_object_field(system_class, out_field) };
 src/lib.rs	//! let Some(println_method) = (unsafe {
