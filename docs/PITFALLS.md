@@ -14,3 +14,8 @@ This guide highlights common footguns when writing JVM agents.
 10. Some events are disabled by default for performance reasons.
 11. A newer Rust table layout does not make a newer slot callable on an older JVM; use the version-gated wrappers.
 12. Value-object allocation callbacks may provide a null `jobject` even when class and size are valid.
+13. `export_agent!` only exports `Agent_OnLoad` / `OnAttach` / `OnUnload`. It does not register callbacks or enable events; `vm_init` and `vm_death` stay silent until you call `set_default_agent_callbacks` and `enable_vm_lifecycle_events` (or the equivalent).
+14. `Jvmti::dispose_environment` is `unsafe`. Consuming one wrapper does not prove callbacks for that environment have drained.
+15. `ClassFileLoadHook` replacements go through `set_transformed_class`. Writing the output pointers by hand can leak, and a later panic in the same callback rolls the pending buffer back instead of committing it.
+16. `NativeMethodBind` is an in/out address. Absent and no-op handlers must leave the VM-selected implementation unchanged; `set_new_address` is `unsafe` and requires an exact JNI ABI match.
+17. High-level `JniEnv` call helpers do not turn a pending Java exception into `Result`. After a JNI call that can throw, check for a pending exception before invoking operations that do not permit one, then propagate, report, or clear it deliberately.

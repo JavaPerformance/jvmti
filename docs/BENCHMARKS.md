@@ -89,7 +89,7 @@ scripts/check-classfile-corpus.sh \
   /usr/lib64/openjdk-28
 ```
 
-The 2026-08-18 release-candidate runs parsed 186,968 class files with zero
+The 2026-08-18 pre-publication runs parsed 186,968 class files with zero
 failures. That count covers all modules in the installed JDK 11, 17, 21, 25,
 27, and 28 images plus JDK 8 `rt.jar`; it is correctness evidence for those
 exact runtimes, not a claim that arbitrary malformed inputs are valid.

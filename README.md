@@ -57,7 +57,10 @@ This crate was designed around how agents are actually written, not around mirro
 
 ## Comparison with Alternatives
 
-If you only need JNI to call into Java from Rust applications, crates like `jni` or `jni-simple` are often sufficient. This crate is purpose-built for **JVMTI agents** (profilers, tracers, debuggers, instrumentation) and emphasizes:
+If you only need JNI for native methods, Android, or calling Java from Rust,
+use `jni` (jni-rs). This crate’s JNI wrappers are complete for agents; they are
+not a replacement for that ecosystem. This crate is purpose-built for
+**JVMTI agents** (profilers, tracers, debuggers, instrumentation) and emphasizes:
 
 1. Full JNI + JVMTI coverage (agent-first focus)
 2. Safe, owned return types in the high-level `env` wrappers
@@ -148,7 +151,9 @@ helper deployment, and compatibility planning remain outside this crate.
 
 ## Compatibility
 
-See `docs/COMPATIBILITY.md` for the full JDK 8-28 matrix and the JDK 29 acceptance gate.
+See `docs/COMPATIBILITY.md` for the full JDK 8-28 matrix and the next-JDK
+acceptance gate. A newer JDK is unsupported until official source is pinned
+and the ABI/live ledgers are extended; do not infer support from JDK 28.
 
 The event callback ABI has dedicated offset tests and a live multi-JDK agent
 proof. Run `cargo test --test jvmti_event_abi` for the portable checks or
@@ -197,6 +202,16 @@ struct MyAgent;
 impl Agent for MyAgent {
     fn on_load(&self, context: AgentLoadContext<'_>) -> jni::jint {
         println!("[MyAgent] Loaded with options: {:?}", context.options_lossy());
+        let Ok(jvmti) = context.vm().jvmti() else {
+            return jni::JNI_ERR;
+        };
+        // `export_agent!` only exports OnLoad/OnAttach/OnUnload. VM events
+        // still need callbacks registered and notifications enabled.
+        if jvmti.set_default_agent_callbacks().is_err()
+            || jvmti.enable_vm_lifecycle_events().is_err()
+        {
+            return jni::JNI_ERR;
+        }
         jni::JNI_OK
     }
 
@@ -590,7 +605,7 @@ access to table tails, reclaimed slots, and capability bits on older JVMs.
 
 | Aspect | Status |
 |--------|--------|
-| API stability | 3.0 candidate; subsequent changes follow SemVer |
+| API stability | 3.x (SemVer from published 3.0.0); 3.0.2 is the current safety patch |
 | JVMTI coverage | 156/156 (100%) |
 | JNI coverage | Complete through pinned JDK 28 source (237 table slots); live preview-runtime evidence through JDK 28 |
 | Dependencies | Zero third-party crates across all features and development targets |
@@ -634,13 +649,13 @@ See [examples/README.md](examples/README.md) for all 36 examples.
 - [**Changelog**](CHANGELOG.md) — Release notes and breaking changes
 - [**Comparison With Alternatives**](docs/COMPARISON.md) — Feature parity and positioning
 - [**Benchmarks**](docs/BENCHMARKS.md) — Dependency-free parser, callback-dispatch, and allocation measurements
-- [**3.0 Performance Reference**](docs/PERFORMANCE_REFERENCE_3_0.md) — Concise raw-C comparison, callback throughput, allocation proof, and downstream dogfood status
+- [**3.0 Performance Reference**](docs/PERFORMANCE_REFERENCE_3_0.md) — 3.0.0-era raw-C comparison, callback throughput, and allocation proof
 - [**Embedding A JVM**](docs/EMBEDDING.md) — Start a JVM from Rust and attach threads
 - [**Dynamic Attach**](docs/ATTACH.md) — Agent_OnAttach example and notes
 - [**Safety and FFI Checklist**](docs/SAFETY.md) — Safety rules and audit checklist
 - [**Independent Unsafe/FFI Review**](docs/UNSAFE_FFI_REVIEW.md) — reviewer scope and acceptance record
 - [**Pitfalls and Footguns**](docs/PITFALLS.md) — Common JVMTI/JNI traps
-- [**Compatibility Matrix**](docs/COMPATIBILITY.md) — JDK 8-28 coverage and JDK 29 gate
+- [**Compatibility Matrix**](docs/COMPATIBILITY.md) — JDK 8-28 coverage and next-JDK gate
 - [**JDK 28 Live Proof**](docs/JDK_28_LIVE_PROOF_2026-08-18.md) — Exact preview runtime identity, live semantic matrix, and claim boundary
 - [**Versioning Policy**](docs/VERSIONING.md) — API stability and SemVer plan
 - [**Release Procedure**](docs/RELEASING.md) — clean candidate, attestations, SBOM, and 3.x compatibility

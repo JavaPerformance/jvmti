@@ -61,10 +61,10 @@ This document captures the safety model for `jvmti-bindings` and a checklist to 
 14. Treat `audits/unsafe-surface-3.0.txt` as a review tripwire, not a proof of
     soundness. Any change requires the independent checklist in
     `UNSAFE_FFI_REVIEW.md` before its baseline is regenerated.
-15. Call `Jvmti::dispose_environment` only after disabling and draining every
-    callback for that environment. The JVM may let already-running callbacks
-    continue, and no environment-derived pointer or wrapper may be used after
-    disposal.
+15. Call `unsafe Jvmti::dispose_environment` only after disabling and draining
+    every callback for that environment. The JVM may let already-running
+    callbacks continue, and no environment-derived pointer or wrapper may be
+    used after disposal.
 
 ## Panic Strategy
 

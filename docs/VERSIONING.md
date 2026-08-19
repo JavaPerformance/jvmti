@@ -39,5 +39,7 @@ API review goals before each minor release:
 3. All FFI allocations have clear ownership and cleanup.
 4. Examples and docs match the released crate name and feature flags.
 
-The definitive candidate and maintenance gates are in
-[Definitive 3.0 Release Gates](DEFINITIVE_3_0_RELEASE_GATES.md).
+The definitive 3.x release and maintenance gates are in
+[Definitive 3.0 Release Gates](DEFINITIVE_3_0_RELEASE_GATES.md). Adding a newer
+JDK is a documented minor release under [Compatibility](COMPATIBILITY.md)
+“Next JDK Policy”, not an inferred bump from `master`.

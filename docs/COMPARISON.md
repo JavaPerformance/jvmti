@@ -1,44 +1,44 @@
 # Comparison With Alternatives
 
-This document is a pragmatic, evidence-based comparison of Rust crates in the JNI/JVMTI space.
-It focuses on *documented* capabilities and stated design goals rather than speculation.
+This document is a pragmatic, evidence-based comparison of Rust crates in the
+JNI/JVMTI space. It focuses on documented capabilities and stated design
+goals rather than download counts or unverified claims.
 
-Last verified: 2026-02-05
+Last verified: 2026-08-19
 
 ## Quick Guidance
 
-- If you are building **JVMTI agents** (profilers, tracers, debuggers), this crate is designed for that use case.
-- If you only need **JNI** for native methods or embedding a JVM, a JNI-focused crate may be sufficient.
-- If you want **code generation** or a higher-level Java/Rust interop framework, use a generator-style crate.
+- If you are building **JVMTI agents** (profilers, tracers, debuggers), this
+  crate is the intended choice: complete JNI + JVM TI tables, agent lifecycle,
+  ownership wrappers, and a class-file parser.
+- If you only need **JNI** for native methods, Android, or calling Java from
+  Rust, use [`jni`](https://crates.io/crates/jni) (jni-rs). This crate’s JNI
+  surface is complete for agents (`A`-form calls, RAII leases, MUTF-8) but is
+  not a replacement for that ecosystem’s typed handles, `call_method` sugar,
+  native-method macros, or Android documentation.
+- If you want **code generation** or a higher-level Java/Rust interop
+  framework, use a generator-style crate.
 
 ## Feature Parity Snapshot (Documented)
 
-Legend: ✅ documented, ⚠️ partial/limited docs, ❔ not documented
+Legend: documented, partial/limited docs, not documented as a product goal
 
-| Crate | JNI | JVMTI | Safety/ergonomics focus | Notes |
-|---|---|---|---|---|
-| **jvmti-bindings** | ✅ | ✅ | Explicit safety boundaries, agent-first ergonomics | Full JNI + JVMTI, safe wrappers, classfile parser |
-| **jni** | ✅ | ❔ | Safe JNI bindings | JNI-only focus (native methods, calling Java, embedding JVM) |
-| **jni-simple** | ✅ | ✅ | Minimal wrapper, unsafe-first | JNI is mature; JVMTI described as low maturity and low test coverage |
-| **rust-jni** | ✅ | ❔ | Safety and typed interop | JNI-focused safe interop with macros |
-| **jni-sys-new** | ✅ | ❔ | Raw definitions | Low-level `jni.h` definitions |
-| **jvmti-sys** | ❔ | ✅ | Raw definitions | Low-level `jvmti.h` definitions |
-| **java-bindgen** | ✅ | ❔ | Generator + CLI | Generates JNI bindings and Java glue |
-
-## Notes On Alternatives
-
-- **jni** focuses on JNI bindings for implementing native methods, calling Java, and embedding the JVM.
-- **jni-simple** is explicitly a “no-magic” binding for JNI and JVMTI; it documents mature JNI coverage but low JVMTI maturity.
-- **rust-jni** emphasizes safe interoperation between Rust and Java using JNI, with helper macros.
-- **jni-sys-new** provides low-level Rust definitions corresponding to `jni.h`.
-- **jvmti-sys** provides low-level Rust definitions corresponding to `jvmti.h`.
-- **java-bindgen** is a JNI bindings generator and CLI tool for producing Java/Rust glue.
+| Crate | JNI | JVMTI | Notes |
+|---|---|---|---|
+| **jvmti-bindings** | Complete fixed-signature + `A` families through JDK 28 | Complete tables, callbacks, live proofs | Agent-first; zero third-party crates; class-file parser |
+| **jni** (jni-rs) | Mature, typed, widely used | Not a goal | Native methods, Android, embed-and-call-Java |
+| **jni-simple** | Thin handwritten JNI | Present; authors describe low maturity | Explicitly “no magic” |
+| **jvmti2** | Via JNI deps / sys | Agent-oriented safe wrapper | Lifetime-tracked environment, RAII allocations, and `jni` integration |
+| **jvmti-sys** / **jvm-ti-sys** | No | Raw `jvmti.h` | Definitions only |
+| **jni-sys** / **jni-sys-new** | Raw `jni.h` | No | Definitions only |
+| **java-bindgen** | Generated glue | No | Codegen + CLI |
 
 ## How To Use This Comparison
 
 1. Decide whether you need JVMTI or only JNI.
-2. Decide whether you want **raw bindings** or **ergonomic wrappers**.
-3. Decide whether you want **manual FFI** or **code generation**.
-4. Pick the crate that aligns to those constraints.
+2. Decide whether you want raw bindings, agent wrappers, or code generation.
+3. Pick the crate that matches that job. Do not expect one crate to win every
+   Java/Rust interop shape.
 
-If you want this matrix expanded (benchmarks, API coverage counts, examples, CI status, and docs completeness), open an issue and we’ll extend it.
+If you want this matrix expanded (benchmarks, API coverage counts, examples,
+CI status, and docs completeness), open an issue.

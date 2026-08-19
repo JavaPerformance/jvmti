@@ -1,6 +1,9 @@
 # JVMTI 3.0.0 ABI and Callback Fidelity Roadmap
 
-Status: implementation complete on local `feature/jvmti-3.0-rust-1.85`; final release-candidate validation remains
+Status: **historical 3.0.0 design audit**. The work described here shipped in
+published 3.0.0. Do not treat open-looking items below as current work.
+Current 3.x policy lives in `VERSIONING.md`, `COMPATIBILITY.md`, and
+`DEFINITIVE_3_0_RELEASE_GATES.md`.
 Audit date: 2026-08-17; implementation status updated 2026-08-18
 Baseline: `main` at `24ed8db4c23354484548cd37edb9e4dc9ff9e0b6`, crate version 2.3.0
 

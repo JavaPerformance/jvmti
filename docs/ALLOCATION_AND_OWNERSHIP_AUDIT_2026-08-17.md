@@ -1,5 +1,7 @@
 # Allocation and Ownership Audit - 2026-08-17
 
+Historical 3.0.0-era evidence snapshot.
+
 ## Conclusion
 
 Normal Rust callback dispatch is allocation-free. A real JDK callback agent

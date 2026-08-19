@@ -65,4 +65,4 @@ compatibility line for the old callback trait.
     not merely against the repository checkout.
 
 See [Definitive 3.0 Release Gates](DEFINITIVE_3_0_RELEASE_GATES.md) for the
-release-candidate command set and long-lived 3.x intake policy.
+release command set and long-lived 3.x intake policy.

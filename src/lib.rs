@@ -57,6 +57,14 @@
 //! impl Agent for MyAgent {
 //!     fn on_load(&self, context: AgentLoadContext<'_>) -> jni::jint {
 //!         println!("[MyAgent] Loaded with options: {:?}", context.options_lossy());
+//!         let Ok(jvmti) = context.vm().jvmti() else {
+//!             return jni::JNI_ERR;
+//!         };
+//!         if jvmti.set_default_agent_callbacks().is_err()
+//!             || jvmti.enable_vm_lifecycle_events().is_err()
+//!         {
+//!             return jni::JNI_ERR;
+//!         }
 //!         jni::JNI_OK
 //!     }
 //!
@@ -108,8 +116,8 @@
 //! | [`sys::jni`] | Raw JNI types and vtable (for FFI) |
 //! | [`sys::jvmti`] | Raw JVMTI types, vtable, capabilities, events |
 //! | [`mod@env`] | **High-level wrappers** - start here for ergonomic APIs |
-//! | [`env::Jvmti`] | JVMTI environment wrapper (153 methods) |
-//! | [`env::JniEnv`] | JNI environment wrapper (60+ methods) |
+//! | [`env::Jvmti`] | High-level JVM TI operations with `Result` returns |
+//! | [`env::JniEnv`] | Complete fixed-signature JNI operations (`A` invocation) |
 //! | [`classfile`] | Typed JVMS-standard attributes through Java 28; opaque unknown attributes |
 //! | [`mutf8`] | Java Modified UTF-8 and exact UTF-16 conversions |
 //! | [`prelude`] | Recommended imports for agents |
@@ -118,10 +126,10 @@
 //!
 //! ## Enabling JVMTI Events
 //!
-//! To receive JVMTI events, you must:
-//! 1. Request the required capabilities
-//! 2. Set up event callbacks
-//! 3. Enable the specific events
+//! To receive JVMTI events, you must request capabilities, register callbacks,
+//! and enable notifications. `export_agent!` does not do those steps.
+//! Helpers such as [`env::Jvmti::configure_class_file_load_hook_agent`] perform
+//! all three for common workflows:
 //!
 //! ```rust,no_run
 //! use jvmti_bindings::prelude::*;
@@ -135,25 +143,8 @@
 //!             return jni::JNI_ERR;
 //!         };
 //!
-//!         // 1. Request capabilities
-//!         let mut caps = jvmti::jvmtiCapabilities::default();
-//!         caps.set_can_generate_all_class_hook_events(true);
-//!         if jvmti_env.add_capabilities(&caps).is_err() {
-//!             return jni::JNI_ERR;
-//!         }
-//!
-//!         // 2. Set up callbacks (wires all events to your Agent impl)
-//!         let callbacks = get_default_callbacks();
-//!         if jvmti_env.set_event_callbacks(callbacks).is_err() {
-//!             return jni::JNI_ERR;
-//!         }
-//!
-//!         // 3. Enable specific events
-//!         if unsafe { jvmti_env.set_event_notification_mode(
-//!             true,  // enable
-//!             jvmti::JVMTI_EVENT_CLASS_FILE_LOAD_HOOK,
-//!             std::ptr::null_mut()  // all threads
-//!         ) }.is_err() {
+//!         // Capabilities, default callbacks, and ClassFileLoadHook enablement.
+//!         if jvmti_env.configure_class_file_load_hook_agent().is_err() {
 //!             return jni::JNI_ERR;
 //!         }
 //!
@@ -284,8 +275,13 @@ pub fn describe_jni_result(code: jni::jint) -> String {
 /// }
 ///
 /// impl Agent for MyProfiler {
-///     fn on_load(&self, _context: AgentLoadContext<'_>) -> jni::jint {
-///         println!("Profiler loaded!");
+///     fn on_load(&self, context: AgentLoadContext<'_>) -> jni::jint {
+///         let Ok(jvmti) = context.vm().jvmti() else {
+///             return jni::JNI_ERR;
+///         };
+///         if jvmti.configure_method_trace_agent().is_err() {
+///             return jni::JNI_ERR;
+///         }
 ///         jni::JNI_OK
 ///     }
 ///
@@ -1275,6 +1271,9 @@ pub fn get_default_callbacks() -> jvmti::jvmtiEventCallbacks {
 ///
 /// - **`Agent_OnUnload`**: Called by the JVM during shutdown. Calls your [`Agent::on_unload`]
 ///   method for cleanup.
+///
+/// The macro does **not** request capabilities, register event callbacks, or
+/// enable notifications. Do that in `on_load` / `on_attach`.
 ///
 /// # Example
 ///

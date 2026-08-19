@@ -103,36 +103,29 @@ impl Agent for ClassCounterAgent {
             }
         };
 
-        // 1. Request capabilities (must happen in on_load)
-        let mut caps = jvmti::jvmtiCapabilities::default();
-        caps.set_can_generate_all_class_hook_events(true);
-        if let Err(e) = jvmti_env.add_capabilities(&caps) {
+        // 1. Request capabilities (OnLoad / OnAttach, before Live if required)
+        if let Err(e) = jvmti_env.add_capabilities_with(|caps| {
+            caps.set_can_generate_all_class_hook_events(true);
+        }) {
             eprintln!("[agent] Failed to add capabilities: {:?}", e);
             return jni::JNI_ERR;
         }
 
-        // 2. Register callbacks (before enabling events!)
-        let callbacks = get_default_callbacks();
-        if let Err(e) = jvmti_env.set_event_callbacks(callbacks) {
+        // 2. Register callbacks (before enabling events)
+        if let Err(e) = jvmti_env.set_default_agent_callbacks() {
             eprintln!("[agent] Failed to set callbacks: {:?}", e);
             return jni::JNI_ERR;
         }
 
-        // 3. Enable events
-        if let Err(e) = jvmti_env.set_event_notification_mode(
-            true,
-            jvmti::JVMTI_EVENT_CLASS_FILE_LOAD_HOOK,
-            std::ptr::null_mut(),
-        ) {
+        // 3. Enable events. `export_agent!` does not do this for you.
+        if let Err(e) = jvmti_env.enable_class_file_load_hook_events() {
             eprintln!("[agent] Failed to enable class hook: {:?}", e);
             return jni::JNI_ERR;
         }
-
-        let _ = jvmti_env.set_event_notification_mode(
-            true,
-            jvmti::JVMTI_EVENT_VM_DEATH,
-            std::ptr::null_mut(),
-        );
+        if let Err(e) = jvmti_env.enable_vm_lifecycle_events() {
+            eprintln!("[agent] Failed to enable VM lifecycle events: {:?}", e);
+            return jni::JNI_ERR;
+        }
 
         jni::JNI_OK
     }
@@ -309,5 +302,5 @@ Run the example:
 
 ```bash
 cargo build --release --example class_logger
-java -agentpath:./target/release/examples/libclass_logger.so MyApp
+java -agentpath:./target/release/examples/libclass_logger.so=filter=com/example MyApp
 ```

@@ -1,7 +1,7 @@
 # Definitive 3.0 Release Gates
 
-Status: release-candidate policy
-Updated: 2026-08-18
+Status: 3.x release policy (in force after published 3.0.0)
+Updated: 2026-08-19
 
 ## Intent
 
@@ -203,9 +203,10 @@ After the 3.0.0 tag:
    proofs.
 4. Never add a reduced callback or a second suffixed callback surface. Extend a
    crate-constructed non-exhaustive payload when the native event grows.
-5. Never infer support for an unpublished JDK from the previous main-line
-   snapshot. JDK 29 enters the compatibility matrix only after an identifiable
-   official source revision passes the complete gate.
+5. Never infer support for an unpublished or unaudited JDK from the previous
+   main-line snapshot. A new feature release enters the compatibility matrix
+   only after an identifiable official source revision passes the complete
+   gate.
 6. Deprecate before removal wherever safety permits. A soundness fix may make a
    narrow break, but must include an explicit migration and release note and an
    exact entry in `api/approved-3x-soundness-breaks.json`. The gate must reject

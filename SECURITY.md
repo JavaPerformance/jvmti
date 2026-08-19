@@ -8,8 +8,8 @@ therefore treated as security-sensitive even when no exploit is known.
 
 | Version | Security support |
 |---------|------------------|
-| 3.x | Supported after 3.0.0 is released |
-| 2.x | Critical fixes only until 3.0.0 is released |
+| 3.x | Supported |
+| 2.x | Unsupported |
 | Earlier | Unsupported |
 
 ## Reporting A Vulnerability
@@ -35,7 +35,7 @@ Release artifacts include SHA-256 checksums, an SPDX SBOM, and GitHub artifact
 attestations. Verify an attestation with:
 
 ```bash
-gh attestation verify jvmti-bindings-3.0.0.crate \
+gh attestation verify jvmti-bindings-<version>.crate \
   --repo JavaPerformance/jvmti
 ```
 

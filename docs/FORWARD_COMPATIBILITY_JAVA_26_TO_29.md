@@ -1,7 +1,10 @@
 # Forward Compatibility: Java 26-29, JNI, JVM TI, and JNA
 
-Status: primary-source research complete; 3.0 compatibility layer implemented locally  
-Research date: 2026-08-17  
+Status: **historical research (2026-08-17)**. The 3.x intake rule remains:
+a newer JDK is unsupported until official source is pinned and the ABI/live
+ledgers are extended. Apply `COMPATIBILITY.md` “Next JDK Policy” to whatever
+feature release is current and unaudited; do not infer support from JDK 28.
+Research date: 2026-08-17
 Purpose: define the 3.0.0 API so foreseeable Java evolution can be handled in
 minor releases rather than another major release
 

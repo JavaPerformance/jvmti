@@ -608,8 +608,9 @@ and policy changes from the preceding release. A JVM TI interface milestone is
 not always the exact Java release: JDK 10 reports JVM TI 9 and JDK 12 reports
 JVM TI 11.
 
-JDK 29 is not claimed until an official identifiable JDK 29 source line passes
-the same ABI and runtime matrix.
+A newer JDK is not claimed until an official identifiable source line for that
+feature release passes the same ABI and runtime matrix. See the "Next JDK
+Policy" in `COMPATIBILITY.md`.
 
 ## Verification After Migration
 
@@ -636,6 +637,6 @@ signatures and representative ownership, open-error, and unsafe-handle
 migrations. It also checks that this guide retains the complete callback and
 safe-to-unsafe method inventories.
 
-The complete release-candidate boundary, including cross-platform CI,
+The complete 3.x release boundary, including cross-platform CI,
 external-consumer, package-content, and preview-runtime requirements, is in
 `DEFINITIVE_3_0_RELEASE_GATES.md`.

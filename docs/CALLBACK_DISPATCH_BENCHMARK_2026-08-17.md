@@ -1,5 +1,7 @@
 # Callback Dispatch Benchmark - 2026-08-17
 
+Historical 3.0.0-era evidence snapshot.
+
 ## Result
 
 On this machine and JVM, the complete Rust no-op callback path was within the

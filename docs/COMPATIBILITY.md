@@ -134,17 +134,21 @@ and JDK 12 reports JVM TI 11. `CallbackContext::jvmti_interface_feature` and
 from an explicit deployment/runtime version source rather than a guessed
 conversion.
 
-## JDK 29 Policy
+## Next JDK Policy
 
-As of 2026-08-18 there is no separately identifiable OpenJDK 29 project,
-branch, tag, or header set to verify. JDK 29 support is not inferred from JDK
-28 source. Before claiming JDK 29 support:
+As of 3.0.2 (2026-08), the newest *audited* feature release is JDK 28 (preview
+`28+7` for live value-object evidence). The next unaudited release at that
+time was JDK 29. Support for any newer JDK is **not** inferred from the
+previous release's source, `master`, or an unchanged structure size.
 
-1. Pin an official JDK 29 source revision and record it.
+Before claiming a new JDK:
+
+1. Pin an official source revision for that feature release and record it.
 2. Generate `jni.h` and `jvmti.h` from that revision.
-3. Diff JNI headers and JVM TI XML against JDK 28.
+3. Diff JNI headers and JVM TI XML against the previously audited release.
 4. Add every structural, semantic, source, and policy delta to the release ledger.
 5. Run the C/Rust ABI probe, callback agent, policy tests, and external-consumer proof.
+6. Ship the addition as a 3.x minor unless the upstream ABI itself is incompatible.
 
 ## Reproducing the Proof
 

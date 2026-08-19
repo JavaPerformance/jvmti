@@ -1,12 +1,13 @@
 # JDK 28 Preview Runtime Proof
 
 Date: 2026-08-18
-`jvmti-bindings` candidate: `46d6a064399259a6c0115f0fc5e90f006fada54e`
+Historical 3.0.0-era evidence snapshot. Revision:
+`46d6a064399259a6c0115f0fc5e90f006fada54e`
 
 ## Scope And Verdict
 
-The 3.0 candidate passed its required semantic/live matrix on an installed JDK
-28 preview runtime. This closes the preview-runtime proof gap tracked by GitHub
+The 3.0.0 line passed its required semantic/live matrix on an installed JDK
+28 preview runtime. This closed the preview-runtime proof gap tracked by GitHub
 issue 4. It does not claim that preview value-object behavior is final Java SE
 28 behavior.
 

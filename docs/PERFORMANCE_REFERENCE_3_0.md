@@ -1,7 +1,8 @@
 # JVM TI 3.0 Performance Reference
 
 Date: 2026-08-18
-Candidate revision: `46d6a064399259a6c0115f0fc5e90f006fada54e`
+Historical 3.0.0-era evidence snapshot. Revision:
+`46d6a064399259a6c0115f0fc5e90f006fada54e`
 
 ## Executive Result
 
@@ -71,8 +72,8 @@ callback. Panic reporting is not promised to be allocation-free.
 
 ## Downstream Dogfood
 
-`bytecode-instrument` was migrated from the 2.x callback surface to this exact
-3.0 candidate and exercised as a real consumer. The proof includes:
+`bytecode-instrument` was migrated from the 2.x callback surface to this
+3.0.0-era revision and exercised as a real consumer. The proof includes:
 
 - all-feature Rust tests and JVM verifier tests;
 - Clippy with warnings denied;
